@@ -18,7 +18,7 @@
         <query/>
         <report/>
         <require_confirmation>true</require_confirmation>
-        <roles>x_1830514_fm.version_user</roles>
+        <roles>x_1830514_fm.admin,x_1830514_fm.user</roles>
         <route/>
         <screen/>
         <sys_class_name>sys_app_module</sys_class_name>
@@ -27,7 +27,7 @@
         <sys_domain>global</sys_domain>
         <sys_domain_path>/</sys_domain_path>
         <sys_id>5fdf81f9c3d81310c05a33bc050131c1</sys_id>
-        <sys_mod_count>1</sys_mod_count>
+        <sys_mod_count>2</sys_mod_count>
         <sys_name>Versions</sys_name>
         <sys_overrides/>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
@@ -35,7 +35,7 @@
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_app_module_5fdf81f9c3d81310c05a33bc050131c1</sys_update_name>
         <sys_updated_by>Siva</sys_updated_by>
-        <sys_updated_on>2026-11-02 12:12:37</sys_updated_on>
+        <sys_updated_on>2026-11-02 14:02:15</sys_updated_on>
         <timeline_page/>
         <title>Versions</title>
         <uncancelable>false</uncancelable>
