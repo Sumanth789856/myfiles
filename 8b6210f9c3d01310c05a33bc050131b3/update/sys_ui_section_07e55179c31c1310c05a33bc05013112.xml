@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_ui_section caption="" section_id="07e55179c31c1310c05a33bc05013112" sys_domain="global" table="x_1830514_fm_quota" version="3" view="Tables">
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>user</element>
+            <position>0</position>
+            <sys_created_by>Siva</sys_created_by>
+            <sys_created_on>2026-11-02 12:23:56</sys_created_on>
+            <sys_id>13e59179c31c1310c05a33bc0501318c</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_quota" sys_domain="global" view="c880327b8c1103100a22deb6dd2b4ef7">07e55179c31c1310c05a33bc05013112</sys_ui_section>
+            <sys_updated_by>Siva</sys_updated_by>
+            <sys_updated_on>2026-11-02 12:23:56</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>maximum_storage</element>
+            <position>1</position>
+            <sys_created_by>Siva</sys_created_by>
+            <sys_created_on>2026-11-02 12:23:56</sys_created_on>
+            <sys_id>dbe59179c31c1310c05a33bc0501318c</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_quota" sys_domain="global" view="c880327b8c1103100a22deb6dd2b4ef7">07e55179c31c1310c05a33bc05013112</sys_ui_section>
+            <sys_updated_by>Siva</sys_updated_by>
+            <sys_updated_on>2026-11-02 12:23:56</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>used_storage</element>
+            <position>2</position>
+            <sys_created_by>Siva</sys_created_by>
+            <sys_created_on>2026-11-02 12:23:56</sys_created_on>
+            <sys_id>97e59179c31c1310c05a33bc0501318d</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_quota" sys_domain="global" view="c880327b8c1103100a22deb6dd2b4ef7">07e55179c31c1310c05a33bc05013112</sys_ui_section>
+            <sys_updated_by>Siva</sys_updated_by>
+            <sys_updated_on>2026-11-02 12:23:56</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>available_storage</element>
+            <position>3</position>
+            <sys_created_by>Siva</sys_created_by>
+            <sys_created_on>2026-11-02 12:23:56</sys_created_on>
+            <sys_id>53e59179c31c1310c05a33bc0501318e</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_quota" sys_domain="global" view="c880327b8c1103100a22deb6dd2b4ef7">07e55179c31c1310c05a33bc05013112</sys_ui_section>
+            <sys_updated_by>Siva</sys_updated_by>
+            <sys_updated_on>2026-11-02 12:23:56</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>warning_threshold</element>
+            <position>4</position>
+            <sys_created_by>Siva</sys_created_by>
+            <sys_created_on>2026-11-02 12:23:56</sys_created_on>
+            <sys_id>1fe59179c31c1310c05a33bc0501318e</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_quota" sys_domain="global" view="c880327b8c1103100a22deb6dd2b4ef7">07e55179c31c1310c05a33bc05013112</sys_ui_section>
+            <sys_updated_by>Siva</sys_updated_by>
+            <sys_updated_on>2026-11-02 12:23:56</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>last_calculated_date</element>
+            <position>5</position>
+            <sys_created_by>Siva</sys_created_by>
+            <sys_created_on>2026-11-02 12:23:56</sys_created_on>
+            <sys_id>d7e59179c31c1310c05a33bc0501318f</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_quota" sys_domain="global" view="c880327b8c1103100a22deb6dd2b4ef7">07e55179c31c1310c05a33bc05013112</sys_ui_section>
+            <sys_updated_by>Siva</sys_updated_by>
+            <sys_updated_on>2026-11-02 12:23:56</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_section action="INSERT_OR_UPDATE">
+            <caption/>
+            <header>false</header>
+            <name>x_1830514_fm_quota</name>
+            <roles/>
+            <sys_class_name>sys_ui_section</sys_class_name>
+            <sys_created_by>Siva</sys_created_by>
+            <sys_created_on>2026-11-02 12:23:55</sys_created_on>
+            <sys_domain>global</sys_domain>
+            <sys_domain_path>/</sys_domain_path>
+            <sys_id>07e55179c31c1310c05a33bc05013112</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>x_1830514_fm_quota</sys_name>
+            <sys_overrides/>
+            <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+            <sys_update_name>sys_ui_section_07e55179c31c1310c05a33bc05013112</sys_update_name>
+            <sys_updated_by>Siva</sys_updated_by>
+            <sys_updated_on>2026-11-02 12:23:55</sys_updated_on>
+            <sys_user/>
+            <title>false</title>
+            <view display_value="Tables" name="Tables">c880327b8c1103100a22deb6dd2b4ef7</view>
+            <view_name/>
+        </sys_ui_section>
+    </sys_ui_section>
+</record_update>

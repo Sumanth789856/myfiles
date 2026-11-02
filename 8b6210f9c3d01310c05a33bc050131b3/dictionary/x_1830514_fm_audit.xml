@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?><database>
+    <element attributes="enforce_dot_walk_cross_scope_access=true" db_object_id="ff83d9f1c31c1310c05a33bc05013129" label="Audit" max_length="40" name="x_1830514_fm_audit" type="collection">
+        <element attributes="encode_utf8=false" default="javascript:gs.getUserID(); " dynamic_default_value="90d1921e5f510100a9ad2572f2b477fe" label="Performed By" mandatory="true" max_length="32" name="performed_by" reference="sys_user" type="reference" use_dynamic_default="true"/>
+        <element attributes="encode_utf8=false" label="Folder" max_length="32" name="folder" reference="x_1830514_fm_folder" type="reference"/>
+        <element attributes="edge_encryption_enabled=true" default="javascript:new GlideDateTime(); " label="Action Date" max_length="40" name="action_date" type="glide_date_time"/>
+        <element attributes="edge_encryption_enabled=true" label="Details" max_length="1000" name="details" type="string"/>
+        <element attributes="encode_utf8=false" label="File" max_length="32" name="file" reference="x_1830514_fm_file" type="reference"/>
+        <element attributes="edge_encryption_enabled=true" choice="1" default="portal" label="Source Interface" mandatory="true" max_length="1000" name="source_interface" type="choice">
+            <choice>
+                <element inactive_on_update="false" label="UI Builder" value="ui_builder"/>
+                <element inactive_on_update="false" label="Portal" value="portal"/>
+            </choice>
+        </element>
+        <element attributes="edge_encryption_enabled=true" label="File Name Snapshot" max_length="100" name="target_name" type="string"/>
+        <element attributes="edge_encryption_enabled=true" choice="1" label="Action" mandatory="true" max_length="40" name="action" type="string">
+            <choice>
+                <element inactive_on_update="false" label="Version Restore" sequence="10" value="version_restore"/>
+                <element inactive_on_update="false" label="Move" sequence="4" value="move"/>
+                <element inactive_on_update="false" label="Download" sequence="2" value="download"/>
+                <element inactive_on_update="false" label="Upload" sequence="1" value="upload"/>
+                <element inactive_on_update="false" label="Delete" sequence="6" value="delete"/>
+                <element inactive_on_update="false" label="Rename" sequence="3" value="rename"/>
+                <element inactive_on_update="false" label="Copy" sequence="5" value="copy"/>
+                <element inactive_on_update="false" label="Unshare" sequence="9" value="unshare"/>
+                <element inactive_on_update="false" label="Create folder" sequence="11" value="create_folder"/>
+                <element inactive_on_update="false" label="Permanent Delete" sequence="7" value="permanent_delete"/>
+                <element inactive_on_update="false" label="share" sequence="8" value="share"/>
+            </choice>
+        </element>
+        <index name="index">
+            <element name="action_date"/>
+            <element name="performed_by"/>
+        </index>
+        <index name="index2">
+            <element name="file"/>
+            <element name="action_date"/>
+        </index>
+        <index name="index3">
+            <element name="folder"/>
+        </index>
+        <index name="index4">
+            <element name="performed_by"/>
+        </index>
+    </element>
+</database>

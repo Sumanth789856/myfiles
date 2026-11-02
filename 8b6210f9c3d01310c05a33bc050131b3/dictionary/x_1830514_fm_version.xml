@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?><database>
+    <element attributes="enforce_dot_walk_cross_scope_access=true" db_object_id="bdbf4db9c3d81310c05a33bc0501318f" label="Version" max_length="40" name="x_1830514_fm_version" type="collection">
+        <element label="Version Number" max_length="40" name="version_number" type="integer"/>
+        <element attributes="edge_encryption_enabled=true" label="Uploaded Date" max_length="40" name="uploaded_date" type="glide_date_time"/>
+        <element label="File Size" max_length="40" name="file_size" type="integer"/>
+        <element attributes="edge_encryption_enabled=true" label="Version Description" max_length="1000" name="version_description" type="string"/>
+        <element attributes="encode_utf8=false" label="File" max_length="32" name="file" reference="x_1830514_fm_file" type="reference"/>
+        <element attributes="encode_utf8=false" label="Uploaded By" max_length="32" name="uploaded_by" reference="sys_user" type="reference"/>
+        <index name="index">
+            <element name="file"/>
+        </index>
+        <index name="index2">
+            <element name="uploaded_by"/>
+        </index>
+    </element>
+</database>

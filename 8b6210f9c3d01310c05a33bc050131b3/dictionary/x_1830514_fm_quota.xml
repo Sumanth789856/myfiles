@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?><database>
+    <element attributes="enforce_dot_walk_cross_scope_access=true" db_object_id="1a44d575c31c1310c05a33bc05013127" label="Quota" max_length="40" name="x_1830514_fm_quota" type="collection">
+        <element label="Available Storage" max_length="19" name="available_storage" type="longint"/>
+        <element attributes="edge_encryption_enabled=true" label="Last Calculated Date" max_length="40" name="last_calculated_date" type="glide_date_time"/>
+        <element attributes="encode_utf8=false" label="User" max_length="32" name="user" reference="sys_user" type="reference"/>
+        <element label="Used Storage" max_length="19" name="used_storage" type="longint"/>
+        <element label="Maximum Storage" max_length="19" name="maximum_storage" type="longint"/>
+        <element label="Warning Threshold" max_length="40" name="warning_threshold" type="integer"/>
+        <index name="index">
+            <element name="user"/>
+        </index>
+    </element>
+</database>

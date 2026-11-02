@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_index">
+    <sys_index action="INSERT_OR_UPDATE">
+        <access_method>btree</access_method>
+        <col_name_string>shared_with_group,active</col_name_string>
+        <index_col_name>b9be4539c3d81310c05a33bc05013122,f5be4539c3d81310c05a33bc05013110</index_col_name>
+        <logical_table_name>x_1830514_fm_share</logical_table_name>
+        <sys_class_name>sys_index</sys_class_name>
+        <sys_created_by>system</sys_created_by>
+        <sys_created_on>2026-11-02 12:00:53</sys_created_on>
+        <sys_id>b9a0917dc3d81310c05a33bc0501319d</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>x_1830514_fm_share</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sys_index_x_1830514_fm_share_shared_with_group_active</sys_update_name>
+        <sys_updated_by>system</sys_updated_by>
+        <sys_updated_on>2026-11-02 12:00:53</sys_updated_on>
+        <table display_value="Share" name="x_1830514_fm_share">550dc535c3d81310c05a33bc050131a9</table>
+        <unique_index>false</unique_index>
+    </sys_index>
+</record_update>

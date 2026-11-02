@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_documentation element="shared_with_group" label="Shared with group" language="en" table="x_1830514_fm_share">
+        <sys_documentation action="INSERT_OR_UPDATE">
+            <element>shared_with_group</element>
+            <help/>
+            <hint/>
+            <label>Shared with group</label>
+            <language>en</language>
+            <name>x_1830514_fm_share</name>
+            <plural>Shared with groups</plural>
+            <sys_class_name>sys_documentation</sys_class_name>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 11:52:25</sys_created_on>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>Shared with group</sys_name>
+            <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+            <sys_update_name>sys_documentation_x_1830514_fm_share_shared_with_group_en</sys_update_name>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 11:52:25</sys_updated_on>
+            <url/>
+            <url_target/>
+        </sys_documentation>
+    </sys_documentation>
+</record_update>
