@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?><database>
+    <element attributes="enforce_dot_walk_cross_scope_access=true" db_object_id="e1306479c3541310c05a33bc05013116" label="Folder" max_length="40" name="x_1830514_fm_folder" type="collection">
+        <element attributes="encode_utf8=false" default="javascript:gs.getUserID();" dynamic_default_value="90d1921e5f510100a9ad2572f2b477fe" label="Owner" mandatory="true" max_length="32" name="owner" reference="sys_user" type="reference" use_dynamic_default="true"/>
+        <element attributes="edge_encryption_enabled=true" display="true" label="Folder Name" max_length="40" name="folder_name" type="string"/>
+        <element label="Is Deleted" max_length="40" name="is_deleted" type="boolean"/>
+        <element attributes="edge_encryption_enabled=true" label="Description" max_length="1000" name="description" type="string"/>
+        <element attributes="encode_utf8=false" label="Parent Folder" max_length="32" name="parent_folder" reference="x_1830514_fm_folder" type="reference"/>
+        <element attributes="encode_utf8=false" label="Deleted By" max_length="32" name="deleted_by" reference="sys_user" type="reference"/>
+        <element attributes="edge_encryption_enabled=true" label="Deleted Date" max_length="40" name="deleted_date" type="glide_date_time"/>
+        <element default="true" label="Active" max_length="40" name="active" type="boolean"/>
+        <element attributes="edge_encryption_enabled=true" label="Folder Path" max_length="1000" name="folder_path" type="string"/>
+        <index name="index">
+            <element name="deleted_by"/>
+        </index>
+        <index name="index2">
+            <element name="is_deleted"/>
+            <element name="deleted_date"/>
+        </index>
+        <index name="index3">
+            <element name="owner"/>
+            <element name="is_deleted"/>
+        </index>
+        <index name="index4">
+            <element name="parent_folder"/>
+            <element name="is_deleted"/>
+        </index>
+    </element>
+</database>

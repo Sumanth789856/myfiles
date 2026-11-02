@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update>
+    <sys_ui_section caption="" section_id="48d1ac3dc3541310c05a33bc050131fa" sys_domain="global" table="x_1830514_fm_folder" version="3" view="">
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>.begin_split</element>
+            <position>0</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>9cd1ec3dc3541310c05a33bc05013101</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type>.begin_split</type>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>owner</element>
+            <position>1</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>d0d1ec3dc3541310c05a33bc050131fc</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>folder_name</element>
+            <position>2</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>9cd1ec3dc3541310c05a33bc050131fc</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>parent_folder</element>
+            <position>3</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>58d1ec3dc3541310c05a33bc050131fd</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>.split</element>
+            <position>4</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>14d1ec3dc3541310c05a33bc050131fe</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type>.split</type>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>active</element>
+            <position>5</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>dcd1ec3dc3541310c05a33bc050131fe</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>is_deleted</element>
+            <position>6</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>98d1ec3dc3541310c05a33bc050131ff</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>.end_split</element>
+            <position>7</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>54d1207dc3541310c05a33bc05013100</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type>.end_split</type>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>description</element>
+            <position>8</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>10d1207dc3541310c05a33bc05013101</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>.begin_split</element>
+            <position>9</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>d8d1207dc3541310c05a33bc05013101</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type>.begin_split</type>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>deleted_by</element>
+            <position>10</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>94d1207dc3541310c05a33bc05013102</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>.split</element>
+            <position>11</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>50d1207dc3541310c05a33bc05013103</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type>.split</type>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>deleted_date</element>
+            <position>12</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>1cd1207dc3541310c05a33bc05013103</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>.end_split</element>
+            <position>13</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>d4d1207dc3541310c05a33bc05013104</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type>.end_split</type>
+        </sys_ui_element>
+        <sys_ui_element action="INSERT_OR_UPDATE">
+            <element>folder_path</element>
+            <position>14</position>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:15</sys_created_on>
+            <sys_id>90d1207dc3541310c05a33bc05013105</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_ui_formatter/>
+            <sys_ui_section caption="NULL" display_value="" name="x_1830514_fm_folder" sys_domain="global" view="Default view">48d1ac3dc3541310c05a33bc050131fa</sys_ui_section>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:15</sys_updated_on>
+            <sys_user/>
+            <type/>
+        </sys_ui_element>
+        <sys_ui_section action="INSERT_OR_UPDATE">
+            <caption/>
+            <header>false</header>
+            <name>x_1830514_fm_folder</name>
+            <roles/>
+            <sys_class_name>sys_ui_section</sys_class_name>
+            <sys_created_by>sumanth</sys_created_by>
+            <sys_created_on>2026-11-02 08:36:14</sys_created_on>
+            <sys_domain>global</sys_domain>
+            <sys_domain_path>/</sys_domain_path>
+            <sys_id>48d1ac3dc3541310c05a33bc050131fa</sys_id>
+            <sys_mod_count>0</sys_mod_count>
+            <sys_name>x_1830514_fm_folder</sys_name>
+            <sys_overrides/>
+            <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+            <sys_policy/>
+            <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+            <sys_update_name>sys_ui_section_48d1ac3dc3541310c05a33bc050131fa</sys_update_name>
+            <sys_updated_by>sumanth</sys_updated_by>
+            <sys_updated_on>2026-11-02 08:36:14</sys_updated_on>
+            <sys_user/>
+            <title>true</title>
+            <view display_value="Default view" name="NULL">Default view</view>
+            <view_name/>
+        </sys_ui_section>
+    </sys_ui_section>
+</record_update>
