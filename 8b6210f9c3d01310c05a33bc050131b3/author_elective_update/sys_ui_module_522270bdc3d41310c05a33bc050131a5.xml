@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_ui_module">
+    <sys_ui_module action="DELETE">
+        <active>true</active>
+        <application/>
+        <filter/>
+        <name>Files</name>
+        <order/>
+        <path/>
+        <path_relative_to_root>false</path_relative_to_root>
+        <roles>x_1830514_fm.file_user</roles>
+        <sys_class_name>sys_ui_module</sys_class_name>
+        <sys_created_by>Siva</sys_created_by>
+        <sys_created_on>2026-11-02 09:47:39</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>522270bdc3d41310c05a33bc050131a5</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Files</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sys_ui_module_522270bdc3d41310c05a33bc050131a5</sys_update_name>
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-02 09:47:39</sys_updated_on>
+        <table>x_1830514_fm_file</table>
+        <uncancelable>false</uncancelable>
+        <view_name/>
+    </sys_ui_module>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</application>
+        <file_path/>
+        <instance_id>e3a722061b2275d01024eb9b2d4bcb3f</instance_id>
+        <instance_name>dev215720</instance_name>
+        <name>sys_ui_module_522270bdc3d41310c05a33bc050131a5</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_ui_module"><sys_ui_module action="INSERT_OR_UPDATE"><active>true</active><application/><filter/><name>Files</name><order/><path/><path_relative_to_root>false</path_relative_to_root><roles>x_1830514_fm.file_user</roles><sys_class_name>sys_ui_module</sys_class_name><sys_created_by>Siva</sys_created_by><sys_created_on>2026-11-02 09:47:39</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>522270bdc3d41310c05a33bc050131a5</sys_id><sys_mod_count>0</sys_mod_count><sys_name>Files</sys_name><sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package><sys_policy/><sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope><sys_update_name>sys_ui_module_522270bdc3d41310c05a33bc050131a5</sys_update_name><sys_updated_by>Siva</sys_updated_by><sys_updated_on>2026-11-02 09:47:39</sys_updated_on><table>x_1830514_fm_file</table><uncancelable>false</uncancelable><view_name/></sys_ui_module></record_update>]]></payload>
+        <payload_hash>-1627537514</payload_hash>
+        <record_name>Files</record_name>
+        <reverted_from/>
+        <source>6620a079c3541310c05a33bc050131dd</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-02 16:05:06</sys_created_on>
+        <sys_id>db884af1c3d05310c05a33bc05013138</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1a19d01da7c0000001</sys_recorded_at>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-02 16:05:06</sys_updated_on>
+        <type>Module</type>
+        <update_guid>17884af1b0d053105cd2994a781a3038</update_guid>
+        <update_guid_history>17884af1b0d053105cd2994a781a3038:0,122270bd75d41310ddb9a3de190e17a8:278477145</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>Siva</sys_created_by>
+        <sys_created_on>2026-11-02 16:29:07</sys_created_on>
+        <sys_db_object display_value="" name="sys_ui_module">sys_ui_module</sys_db_object>
+        <sys_id>2eccd550efb0496b9a6d90194bbb7cf1</sys_id>
+        <sys_metadata>522270bdc3d41310c05a33bc050131a5</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Files</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_scope_delete display_value="">0ce7e5c8e51849d4822871c8bb2d3d10</sys_scope_delete>
+        <sys_update_name>sys_ui_module_522270bdc3d41310c05a33bc050131a5</sys_update_name>
+        <sys_update_version display_value="sys_ui_module_522270bdc3d41310c05a33bc050131a5">db884af1c3d05310c05a33bc05013138</sys_update_version>
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-02 16:29:07</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>
