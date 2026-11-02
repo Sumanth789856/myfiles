@@ -8,9 +8,9 @@
         <sys_id>9b6250f9c3d01310c05a33bc0501312a</sys_id>
         <sys_mod_count>0</sys_mod_count>
         <sys_name>d36250f9c3d01310c05a33bc05013128</sys_name>
-        <sys_package display_value="FM" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
-        <sys_scope display_value="FM">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_embedded_help_role_9b6250f9c3d01310c05a33bc0501312a</sys_update_name>
         <sys_updated_by>admin</sys_updated_by>
         <sys_updated_on>2026-11-02 07:29:00</sys_updated_on>
