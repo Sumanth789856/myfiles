@@ -4,24 +4,24 @@
         <application display_value="File Manager">511d4935c3d81310c05a33bc050131d8</application>
         <filter/>
         <name>Quotas</name>
-        <order/>
+        <order>600</order>
         <path/>
         <path_relative_to_root>false</path_relative_to_root>
-        <roles>x_1830514_fm.quota_user</roles>
+        <roles>x_1830514_fm.admin,x_1830514_fm.user</roles>
         <sys_class_name>sys_ui_module</sys_class_name>
         <sys_created_by>Siva</sys_created_by>
         <sys_created_on>2026-11-02 12:17:20</sys_created_on>
         <sys_domain>global</sys_domain>
         <sys_domain_path>/</sys_domain_path>
         <sys_id>7a64d975c31c1310c05a33bc050131a4</sys_id>
-        <sys_mod_count>0</sys_mod_count>
+        <sys_mod_count>3</sys_mod_count>
         <sys_name>Quotas</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_ui_module_7a64d975c31c1310c05a33bc050131a4</sys_update_name>
-        <sys_updated_by>Siva</sys_updated_by>
-        <sys_updated_on>2026-11-02 12:17:20</sys_updated_on>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-02 16:14:28</sys_updated_on>
         <table>x_1830514_fm_quota</table>
         <uncancelable>false</uncancelable>
         <view_name/>

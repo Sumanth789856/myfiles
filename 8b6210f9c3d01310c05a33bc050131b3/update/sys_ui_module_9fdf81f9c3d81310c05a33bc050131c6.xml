@@ -4,24 +4,24 @@
         <application display_value="File Manager">511d4935c3d81310c05a33bc050131d8</application>
         <filter/>
         <name>Versions</name>
-        <order/>
+        <order>400</order>
         <path/>
         <path_relative_to_root>false</path_relative_to_root>
-        <roles>x_1830514_fm.version_user</roles>
+        <roles>x_1830514_fm.admin,x_1830514_fm.user</roles>
         <sys_class_name>sys_ui_module</sys_class_name>
         <sys_created_by>Siva</sys_created_by>
         <sys_created_on>2026-11-02 11:57:26</sys_created_on>
         <sys_domain>global</sys_domain>
         <sys_domain_path>/</sys_domain_path>
         <sys_id>9fdf81f9c3d81310c05a33bc050131c6</sys_id>
-        <sys_mod_count>0</sys_mod_count>
+        <sys_mod_count>2</sys_mod_count>
         <sys_name>Versions</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_ui_module_9fdf81f9c3d81310c05a33bc050131c6</sys_update_name>
-        <sys_updated_by>Siva</sys_updated_by>
-        <sys_updated_on>2026-11-02 11:57:26</sys_updated_on>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-02 16:13:47</sys_updated_on>
         <table>x_1830514_fm_version</table>
         <uncancelable>false</uncancelable>
         <view_name/>
