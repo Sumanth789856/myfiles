@@ -32,7 +32,8 @@ FileManagerAccess.prototype = {
         this._groupCache = null;
     },
 
-    // Check File Manager Admin role
+    // Check whether current user is application admin.
+    // Admin role does not automatically grant file access.
     isAdmin: function() {
         return gs.hasRole('x_1830514_fm.admin');
     },
@@ -43,17 +44,17 @@ FileManagerAccess.prototype = {
         if (!fileGr || !fileGr.isValidRecord())
             return this.LEVEL.NONE;
 
-        if (this.isAdmin())
-            return this.LEVEL.OWNER;
-
+        // File owner gets full access
         if (String(fileGr.getValue('owner')) === this.userId)
             return this.LEVEL.OWNER;
 
+        // Check direct file sharing
         var level = this._shareLevel(
             'file',
             fileGr.getUniqueValue()
         );
 
+        // Check permissions inherited from parent folders
         if (!fileGr.folder.nil()) {
             level = Math.max(
                 level,
@@ -70,12 +71,11 @@ FileManagerAccess.prototype = {
         if (!folderGr || !folderGr.isValidRecord())
             return this.LEVEL.NONE;
 
-        if (this.isAdmin())
-            return this.LEVEL.OWNER;
-
+        // Folder owner gets full access
         if (String(folderGr.getValue('owner')) === this.userId)
             return this.LEVEL.OWNER;
 
+        // Check direct and inherited folder permissions
         return this._folderShareLevel(folderGr.getUniqueValue());
     },
 
@@ -96,6 +96,7 @@ FileManagerAccess.prototype = {
         return this._level(gr, isFolder) >= this.LEVEL.OWNER;
     },
 
+    // Determine whether record is a file or folder
     _level: function(gr, isFolder) {
         return isFolder ?
             this.getFolderLevel(gr) :
@@ -113,6 +114,7 @@ FileManagerAccess.prototype = {
 
             seen[folderId] = true;
 
+            // Check shares on this folder
             best = Math.max(
                 best,
                 this._shareLevel('folder', folderId)
@@ -123,7 +125,7 @@ FileManagerAccess.prototype = {
             if (!folder.get(folderId))
                 break;
 
-            // Parent folder ownership gives full access
+            // Parent folder ownership grants full access to descendants
             if (String(folder.getValue('owner')) === this.userId) {
                 best = this.LEVEL.OWNER;
                 break;
@@ -208,13 +210,13 @@ FileManagerAccess.prototype = {
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-03 05:54:33</sys_created_on>
         <sys_id>5336c5c6c3989310c05a33bc05013171</sys_id>
-        <sys_mod_count>0</sys_mod_count>
+        <sys_mod_count>1</sys_mod_count>
         <sys_name>FileManagerAccess</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy>read</sys_policy>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_script_include_5336c5c6c3989310c05a33bc05013171</sys_update_name>
         <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-03 05:54:33</sys_updated_on>
+        <sys_updated_on>2026-11-03 12:49:30</sys_updated_on>
     </sys_script_include>
 </record_update>

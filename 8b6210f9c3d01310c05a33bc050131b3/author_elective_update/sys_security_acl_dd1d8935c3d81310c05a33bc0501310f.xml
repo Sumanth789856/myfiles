@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_security_acl">
+    <sys_security_acl action="DELETE">
+        <active>true</active>
+        <admin_overrides>true</admin_overrides>
+        <advanced>false</advanced>
+        <applies_to/>
+        <condition/>
+        <controlled_by_refs/>
+        <decision_type>allow</decision_type>
+        <description>Default access control on x_1830514_fm_share</description>
+        <local_or_existing>Existing</local_or_existing>
+        <name>x_1830514_fm_share</name>
+        <operation display_value="read">read</operation>
+        <script/>
+        <security_attribute/>
+        <sys_class_name>sys_security_acl</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-02 11:45:17</sys_created_on>
+        <sys_id>dd1d8935c3d81310c05a33bc0501310f</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>x_1830514_fm_share</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sys_security_acl_dd1d8935c3d81310c05a33bc0501310f</sys_update_name>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-02 11:45:17</sys_updated_on>
+        <type display_value="record">record</type>
+    </sys_security_acl>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</application>
+        <file_path/>
+        <instance_id>e3a722061b2275d01024eb9b2d4bcb3f</instance_id>
+        <instance_name>dev215720</instance_name>
+        <name>sys_security_acl_dd1d8935c3d81310c05a33bc0501310f</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_security_acl"><sys_security_acl action="INSERT_OR_UPDATE"><active>true</active><admin_overrides>true</admin_overrides><advanced>false</advanced><applies_to/><condition/><controlled_by_refs/><decision_type>allow</decision_type><description>Default access control on x_1830514_fm_share</description><local_or_existing>Existing</local_or_existing><name>x_1830514_fm_share</name><operation display_value="read">read</operation><script/><security_attribute/><sys_class_name>sys_security_acl</sys_class_name><sys_created_by>sumanth</sys_created_by><sys_created_on>2026-11-02 11:45:17</sys_created_on><sys_id>dd1d8935c3d81310c05a33bc0501310f</sys_id><sys_mod_count>0</sys_mod_count><sys_name>x_1830514_fm_share</sys_name><sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package><sys_policy/><sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope><sys_update_name>sys_security_acl_dd1d8935c3d81310c05a33bc0501310f</sys_update_name><sys_updated_by>sumanth</sys_updated_by><sys_updated_on>2026-11-02 11:45:17</sys_updated_on><type display_value="record">record</type></sys_security_acl></record_update>]]></payload>
+        <payload_hash>-481952587</payload_hash>
+        <record_name>x_1830514_fm_share</record_name>
+        <reverted_from/>
+        <source>6620a079c3541310c05a33bc050131dd</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-02 11:45:17</sys_created_on>
+        <sys_id>d51d8935c3d81310c05a33bc05013115</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1a19c13fa820000001</sys_recorded_at>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-02 11:45:17</sys_updated_on>
+        <type>Access Control</type>
+        <update_guid>951d8935edd813101d0960d0fa1c8914</update_guid>
+        <update_guid_history>951d8935edd813101d0960d0fa1c8914:-481952587</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-03 14:00:10</sys_created_on>
+        <sys_db_object display_value="" name="sys_security_acl">sys_security_acl</sys_db_object>
+        <sys_id>90fa0013ec874060a541a75be1278cc4</sys_id>
+        <sys_metadata>dd1d8935c3d81310c05a33bc0501310f</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>x_1830514_fm_share</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_parent display_value="x_1830514_fm_share">951d8935c3d81310c05a33bc05013142</sys_parent>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_scope_delete display_value="">0ce7e5c8e51849d4822871c8bb2d3d10</sys_scope_delete>
+        <sys_update_name>sys_security_acl_dd1d8935c3d81310c05a33bc0501310f</sys_update_name>
+        <sys_update_version display_value="sys_security_acl_dd1d8935c3d81310c05a33bc0501310f">d51d8935c3d81310c05a33bc05013115</sys_update_version>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-03 14:00:10</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

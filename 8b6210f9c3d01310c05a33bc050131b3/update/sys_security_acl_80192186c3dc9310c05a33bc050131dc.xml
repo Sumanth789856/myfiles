@@ -1,30 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?><record_update table="sys_security_acl">
     <sys_security_acl action="INSERT_OR_UPDATE">
-        <active>true</active>
+        <active>false</active>
         <admin_overrides>false</admin_overrides>
         <advanced>false</advanced>
         <applies_to/>
         <condition/>
         <controlled_by_refs/>
         <decision_type>allow</decision_type>
-        <description>Allow delete for records in x_1830514_fm_share, for users with role x_1830514_fm.admin.</description>
+        <description>Allow read for records in x_1830514_fm_folder, for users with role x_1830514_fm.admin.</description>
         <local_or_existing>Existing</local_or_existing>
-        <name>x_1830514_fm_share</name>
-        <operation display_value="delete">delete</operation>
+        <name>x_1830514_fm_folder</name>
+        <operation display_value="read">read</operation>
         <script/>
         <security_attribute/>
         <sys_class_name>sys_security_acl</sys_class_name>
-        <sys_created_by>sumanth</sys_created_by>
-        <sys_created_on>2026-11-03 06:17:16</sys_created_on>
-        <sys_id>206b8582c3d89310c05a33bc0501313d</sys_id>
-        <sys_mod_count>1</sys_mod_count>
-        <sys_name>x_1830514_fm_share</sys_name>
+        <sys_created_by>Siva</sys_created_by>
+        <sys_created_on>2026-11-03 08:26:54</sys_created_on>
+        <sys_id>80192186c3dc9310c05a33bc050131dc</sys_id>
+        <sys_mod_count>4</sys_mod_count>
+        <sys_name>x_1830514_fm_folder</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
-        <sys_update_name>sys_security_acl_206b8582c3d89310c05a33bc0501313d</sys_update_name>
+        <sys_update_name>sys_security_acl_80192186c3dc9310c05a33bc050131dc</sys_update_name>
         <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-03 06:17:17</sys_updated_on>
+        <sys_updated_on>2026-11-03 13:01:02</sys_updated_on>
         <type display_value="record">record</type>
     </sys_security_acl>
 </record_update>

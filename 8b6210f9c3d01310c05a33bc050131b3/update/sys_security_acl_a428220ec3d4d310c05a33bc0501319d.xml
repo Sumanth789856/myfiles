@@ -1,30 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?><record_update table="sys_security_acl">
     <sys_security_acl action="INSERT_OR_UPDATE">
-        <active>true</active>
+        <active>false</active>
         <admin_overrides>true</admin_overrides>
-        <advanced>false</advanced>
+        <advanced>true</advanced>
         <applies_to/>
         <condition/>
         <controlled_by_refs/>
         <decision_type>allow</decision_type>
-        <description>Allow read for records in x_1830514_fm_share, for users with role x_1830514_fm.share_user.</description>
+        <description>Allow delete for records in x_1830514_fm_folder, for users with role x_1830514_fm.user, and if the ACL script returns true.</description>
         <local_or_existing>Existing</local_or_existing>
-        <name>x_1830514_fm_share</name>
-        <operation display_value="read">read</operation>
-        <script/>
+        <name>x_1830514_fm_folder</name>
+        <operation display_value="delete">delete</operation>
+        <script><![CDATA[answer = new x_1830514_fm.FileManagerAccess().canDelete(current, true);]]></script>
         <security_attribute/>
         <sys_class_name>sys_security_acl</sys_class_name>
         <sys_created_by>sumanth</sys_created_by>
-        <sys_created_on>2026-11-02 11:45:17</sys_created_on>
-        <sys_id>dd1d8935c3d81310c05a33bc0501310f</sys_id>
-        <sys_mod_count>1</sys_mod_count>
-        <sys_name>x_1830514_fm_share</sys_name>
+        <sys_created_on>2026-11-03 13:02:05</sys_created_on>
+        <sys_id>a428220ec3d4d310c05a33bc0501319d</sys_id>
+        <sys_mod_count>3</sys_mod_count>
+        <sys_name>x_1830514_fm_folder</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
-        <sys_update_name>sys_security_acl_dd1d8935c3d81310c05a33bc0501310f</sys_update_name>
+        <sys_update_name>sys_security_acl_a428220ec3d4d310c05a33bc0501319d</sys_update_name>
         <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-02 11:45:17</sys_updated_on>
+        <sys_updated_on>2026-11-03 13:15:57</sys_updated_on>
         <type display_value="record">record</type>
     </sys_security_acl>
 </record_update>

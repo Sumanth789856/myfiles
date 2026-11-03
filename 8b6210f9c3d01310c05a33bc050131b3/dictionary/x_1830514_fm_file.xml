@@ -9,10 +9,10 @@
         <element label="Is Starred" max_length="40" name="is_starred" type="boolean"/>
         <element attributes="edge_encryption_enabled=true" label="Content Type" max_length="100" name="content_type" type="string"/>
         <element label="Is Deleted" max_length="40" name="is_deleted" type="boolean"/>
-        <element attributes="encode_utf8=false" label="Folder" max_length="32" name="folder" reference="x_1830514_fm_folder" type="reference"/>
+        <element attributes="encode_utf8=false" label="Folder" max_length="32" name="folder" reference="x_1830514_fm_folder" reference_qual="javascript:'owner=' + gs.getUserID() + '^is_deleted=false'" type="reference" use_reference_qualifier="advanced"/>
         <element attributes="edge_encryption_enabled=true" label="Description" max_length="1000" name="description" type="string"/>
         <element attributes="encode_utf8=false" label="Deleted By" max_length="32" name="deleted_by" reference="sys_user" type="reference"/>
-        <element attributes="encode_utf8=false" label="Owner" max_length="32" name="owner" reference="sys_user" type="reference"/>
+        <element attributes="encode_utf8=false" default="javascript:gs.getUserID();" dynamic_default_value="90d1921e5f510100a9ad2572f2b477fe" label="Owner" mandatory="true" max_length="32" name="owner" reference="sys_user" type="reference" use_dynamic_default="true"/>
         <index name="index">
             <element name="deleted_by"/>
         </index>
