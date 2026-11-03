@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_include">
+    <sys_script_include action="INSERT_OR_UPDATE">
+        <access>package_private</access>
+        <active>true</active>
+        <api_name>x_1830514_fm.FileManagerAccess</api_name>
+        <caller_access/>
+        <client_callable>false</client_callable>
+        <description/>
+        <mobile_callable>false</mobile_callable>
+        <name>FileManagerAccess</name>
+        <sandbox_callable>false</sandbox_callable>
+        <script><![CDATA[
+var FileManagerAccess = Class.create();
+
+FileManagerAccess.prototype = {
+
+    LEVEL: {
+        NONE: 0,
+        VIEWER: 1,
+        EDITOR: 2,
+        OWNER: 3
+    },
+
+    MAX_DEPTH: 25,
+
+    T_FOLDER: 'x_1830514_fm_folder',
+    T_FILE: 'x_1830514_fm_file',
+    T_SHARE: 'x_1830514_fm_share',
+
+    initialize: function(userId) {
+        this.userId = userId || gs.getUserID();
+        this._groupCache = null;
+    },
+
+    // Check File Manager Admin role
+    isAdmin: function() {
+        return gs.hasRole('x_1830514_fm.admin');
+    },
+
+    // Get effective permission level for a file
+    getFileLevel: function(fileGr) {
+
+        if (!fileGr || !fileGr.isValidRecord())
+            return this.LEVEL.NONE;
+
+        if (this.isAdmin())
+            return this.LEVEL.OWNER;
+
+        if (String(fileGr.getValue('owner')) === this.userId)
+            return this.LEVEL.OWNER;
+
+        var level = this._shareLevel(
+            'file',
+            fileGr.getUniqueValue()
+        );
+
+        if (!fileGr.folder.nil()) {
+            level = Math.max(
+                level,
+                this._folderShareLevel(fileGr.getValue('folder'))
+            );
+        }
+
+        return level;
+    },
+
+    // Get effective permission level for a folder
+    getFolderLevel: function(folderGr) {
+
+        if (!folderGr || !folderGr.isValidRecord())
+            return this.LEVEL.NONE;
+
+        if (this.isAdmin())
+            return this.LEVEL.OWNER;
+
+        if (String(folderGr.getValue('owner')) === this.userId)
+            return this.LEVEL.OWNER;
+
+        return this._folderShareLevel(folderGr.getUniqueValue());
+    },
+
+    // Permission checking methods
+    canRead: function(gr, isFolder) {
+        return this._level(gr, isFolder) >= this.LEVEL.VIEWER;
+    },
+
+    canWrite: function(gr, isFolder) {
+        return this._level(gr, isFolder) >= this.LEVEL.EDITOR;
+    },
+
+    canDelete: function(gr, isFolder) {
+        return this._level(gr, isFolder) >= this.LEVEL.OWNER;
+    },
+
+    canShare: function(gr, isFolder) {
+        return this._level(gr, isFolder) >= this.LEVEL.OWNER;
+    },
+
+    _level: function(gr, isFolder) {
+        return isFolder ?
+            this.getFolderLevel(gr) :
+            this.getFileLevel(gr);
+    },
+
+    // Check current folder and all parent folders
+    _folderShareLevel: function(folderId) {
+
+        var best = this.LEVEL.NONE;
+        var depth = 0;
+        var seen = {};
+
+        while (folderId && depth < this.MAX_DEPTH && !seen[folderId]) {
+
+            seen[folderId] = true;
+
+            best = Math.max(
+                best,
+                this._shareLevel('folder', folderId)
+            );
+
+            var folder = new GlideRecord(this.T_FOLDER);
+
+            if (!folder.get(folderId))
+                break;
+
+            // Parent folder ownership gives full access
+            if (String(folder.getValue('owner')) === this.userId) {
+                best = this.LEVEL.OWNER;
+                break;
+            }
+
+            folderId = folder.getValue('parent_folder');
+            depth++;
+        }
+
+        return best;
+    },
+
+    // Check direct user and group sharing permissions
+    _shareLevel: function(field, id) {
+
+        var best = this.LEVEL.NONE;
+
+        var sh = new GlideRecord(this.T_SHARE);
+
+        sh.addQuery(field, id);
+        sh.addActiveQuery();
+
+        var cond = sh.addQuery('shared_with_user', this.userId);
+
+        var groups = this._myGroups();
+
+        if (groups) {
+            cond.addOrCondition('shared_with_group', 'IN', groups);
+        }
+
+        sh.query();
+
+        var now = new GlideDateTime();
+
+        while (sh.next()) {
+
+            // Ignore expired shares
+            if (!sh.expiration_date.nil() &&
+                sh.expiration_date.getGlideObject().compareTo(now) < 0) {
+                continue;
+            }
+
+            var permission = sh.getValue('permission');
+
+            var level = (permission === 'editor') ?
+                this.LEVEL.EDITOR :
+                this.LEVEL.VIEWER;
+
+            if (level > best)
+                best = level;
+        }
+
+        return best;
+    },
+
+    // Get all groups belonging to the user
+    _myGroups: function() {
+
+        if (this._groupCache !== null)
+            return this._groupCache;
+
+        var ids = [];
+
+        var gm = new GlideRecord('sys_user_grmember');
+
+        gm.addQuery('user', this.userId);
+        gm.query();
+
+        while (gm.next()) {
+            ids.push(gm.getValue('group'));
+        }
+
+        this._groupCache = ids.join(',');
+
+        return this._groupCache;
+    },
+
+    type: 'FileManagerAccess'
+};
+]]></script>
+        <sys_class_name>sys_script_include</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-03 05:54:33</sys_created_on>
+        <sys_id>5336c5c6c3989310c05a33bc05013171</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>FileManagerAccess</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy>read</sys_policy>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sys_script_include_5336c5c6c3989310c05a33bc05013171</sys_update_name>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-03 05:54:33</sys_updated_on>
+    </sys_script_include>
+</record_update>
