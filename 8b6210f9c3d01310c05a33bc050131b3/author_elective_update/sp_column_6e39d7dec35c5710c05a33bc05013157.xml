@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sp_column">
+    <sp_column action="DELETE">
+        <aria_label/>
+        <class_name/>
+        <order>1</order>
+        <semantic_tag/>
+        <size>12</size>
+        <size_lg/>
+        <size_sm/>
+        <size_xs/>
+        <sp_row display_value="1">e239d7dec35c5710c05a33bc05013146</sp_row>
+        <sys_class_name>sp_column</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-04 11:14:33</sys_created_on>
+        <sys_id>6e39d7dec35c5710c05a33bc05013157</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>1</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sp_column_6e39d7dec35c5710c05a33bc05013157</sys_update_name>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-04 11:14:33</sys_updated_on>
+    </sp_column>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</application>
+        <file_path/>
+        <instance_id>e3a722061b2275d01024eb9b2d4bcb3f</instance_id>
+        <instance_name>dev215720</instance_name>
+        <name>sp_column_6e39d7dec35c5710c05a33bc05013157</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update table="sp_column"><sp_column action="INSERT_OR_UPDATE"><aria_label/><class_name/><order>1</order><semantic_tag/><size>12</size><size_lg/><size_sm/><size_xs/><sp_row display_value="1">e239d7dec35c5710c05a33bc05013146</sp_row><sys_class_name>sp_column</sys_class_name><sys_created_by>sumanth</sys_created_by><sys_created_on>2026-11-04 11:14:33</sys_created_on><sys_id>6e39d7dec35c5710c05a33bc05013157</sys_id><sys_mod_count>0</sys_mod_count><sys_name>1</sys_name><sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package><sys_policy/><sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope><sys_update_name>sp_column_6e39d7dec35c5710c05a33bc05013157</sys_update_name><sys_updated_by>sumanth</sys_updated_by><sys_updated_on>2026-11-04 11:14:33</sys_updated_on></sp_column></record_update>]]></payload>
+        <payload_hash>2092597035</payload_hash>
+        <record_name>1</record_name>
+        <reverted_from/>
+        <source>6620a079c3541310c05a33bc050131dd</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-04 11:14:33</sys_created_on>
+        <sys_id>a239d7dec35c5710c05a33bc0501315c</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1a1a6448f6a0000001</sys_recorded_at>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-04 11:14:33</sys_updated_on>
+        <type>Column</type>
+        <update_guid>6239d7de3c5c57100b6ab1c750df055b</update_guid>
+        <update_guid_history>6239d7de3c5c57100b6ab1c750df055b:2092597035</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete display_value="1">4d92af52c3dc5710c05a33bc0501310d</sys_audit_delete>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-04 11:55:24</sys_created_on>
+        <sys_db_object display_value="" name="sp_column">sp_column</sys_db_object>
+        <sys_id>9e0d260bd0d64b35bf977ffd6ec2f701</sys_id>
+        <sys_metadata>6e39d7dec35c5710c05a33bc05013157</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>1</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_scope_delete display_value="">0ce7e5c8e51849d4822871c8bb2d3d10</sys_scope_delete>
+        <sys_update_name>sp_column_6e39d7dec35c5710c05a33bc05013157</sys_update_name>
+        <sys_update_version display_value="sp_column_6e39d7dec35c5710c05a33bc05013157">a239d7dec35c5710c05a33bc0501315c</sys_update_version>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-04 11:55:24</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

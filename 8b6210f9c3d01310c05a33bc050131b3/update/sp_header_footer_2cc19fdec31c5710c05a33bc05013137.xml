@@ -1,0 +1,1004 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sp_header_footer">
+    <sp_header_footer action="INSERT_OR_UPDATE">
+        <category>standard</category>
+        <client_script><![CDATA[function ($rootScope, $scope, snRecordWatcher, spUtil, $location,
+    $uibModal, cabrillo, $timeout, $window, i18n, spAriaUtil,
+    $element, $injector) {
+
+    // Logo text
+    $scope.logoText = i18n.format(
+        i18n.getMessage('Go to {0} Homepage'),
+        $scope.portal.title
+    );
+
+    // Collapse navigation
+    $scope.collapse = function() {
+        $rootScope.$emit('sp-navbar-collapse');
+    };
+
+    // =====================================
+    // SEARCH BAR FUNCTIONALITY
+    // =====================================
+
+  
+$scope.searchTerm = '';
+
+$scope.submitSearch = function() {
+    var query = ($scope.searchTerm || '').trim();
+
+    if (!query)
+        return;
+
+    $rootScope.$broadcast('fm.search', {
+        query: query
+    });
+};
+
+$scope.clearSearch = function() {
+    $scope.searchTerm = '';
+
+    $rootScope.$broadcast('fm.search', {
+        query: ''
+    });
+};
+
+
+    // =====================================
+    // ORIGINAL AVATAR FUNCTIONALITY
+    // =====================================
+
+    $scope.avatarProfile = {
+        userID: $scope.user.sys_id,
+        name: $scope.user.name,
+        initials: $window.NOW.user_initials
+    };
+
+    if ($window.NOW.user_avatar) {
+        $scope.avatarProfile.userImage = $window.NOW.user_avatar;
+    }
+
+    // Native application handling
+    if (cabrillo.isNative()) {
+        if ($window.innerWidth < 767) {
+            $scope.isViewNative = true;
+        } else {
+            $scope.isViewNativeTablet = true;
+        }
+    }
+
+    // =====================================
+    // ORIGINAL LIVE CHAT
+    // =====================================
+
+    $scope.openPopUp = function() {
+        var url = "$chat_support.do?queueID=" +
+            $scope.data.connect_support_queue_id;
+
+        $window.open(url, "popup", "width=900, height=600");
+    };
+
+    // =====================================
+    // ORIGINAL LOGIN MODAL
+    // =====================================
+
+    $scope.openLogin = function() {
+
+        $scope.modalInstance = $uibModal.open({
+            templateUrl: 'modalLogin',
+            scope: $scope
+        });
+
+        var pageRoot = angular.element('.sp-page-root');
+
+        $scope.modalInstance.rendered.then(function() {
+
+            var $uibModalStack = $injector.get('$uibModalStack');
+            var modalObj = $uibModalStack.getTop();
+
+            if (modalObj && modalObj.value) {
+
+                var modal = modalObj.value.modalDomEl;
+
+                modal.attr(
+                    'aria-label',
+                    modal.find('.panel-title').html()
+                );
+
+                modal.attr('aria-modal', 'true');
+                pageRoot.attr('aria-hidden', 'true');
+            }
+        });
+
+        $scope.modalInstance.closed.then(function() {
+            pageRoot.attr('aria-hidden', 'false');
+        });
+    };
+
+    // =====================================
+    // RESPONSIVE AVATAR HANDLING
+    // =====================================
+
+    var nav = document.getElementById('responsiveNav');
+
+    function isMDScreenSize() {
+        if (nav) {
+            return nav.classList.contains('responsive-tablet');
+        }
+
+        return false;
+    }
+
+    var mdScreenSize = isMDScreenSize();
+
+    $scope.showSMAvatar = mdScreenSize;
+    $scope.showAvatar = !mdScreenSize;
+
+    $scope.isAgentChatConfigured = g_has_agent_chat_config;
+
+    function updateResponsiveClasses(width) {
+
+        if (!nav) {
+            return;
+        }
+
+        if (width <= 992) {
+
+            nav.classList.add('responsive-tablet');
+            nav.classList.remove('responsive-desktop');
+
+        } else {
+
+            nav.classList.add('responsive-desktop');
+            nav.classList.remove('responsive-tablet');
+        }
+
+        var isMobile = isMDScreenSize();
+
+        if (mdScreenSize !== isMobile) {
+
+            $scope.$applyAsync(function() {
+                $scope.showSMAvatar = isMobile;
+                $scope.showAvatar = !isMobile;
+            });
+
+            mdScreenSize = isMobile;
+        }
+    }
+
+    // Resize observer
+    var observer = null;
+
+    if (nav && $window.ResizeObserver) {
+
+        observer = new $window.ResizeObserver(function(entries) {
+
+            if (entries && entries[0]) {
+                updateResponsiveClasses(
+                    entries[0].contentRect.width
+                );
+            }
+        });
+
+        updateResponsiveClasses(nav.getBoundingClientRect().width);
+        observer.observe(nav);
+    }
+
+    // =====================================
+    // ORIGINAL AVATAR CHANGE LISTENER
+    // =====================================
+
+    var avatarListener = $rootScope.$on(
+        'sp.avatar_changed',
+        function(evt, obj) {
+
+            $scope.userID = "";
+
+            $scope.newAvatarId = obj.newAvatarId;
+
+            $timeout(function() {
+
+                $scope.userID = $scope.user.sys_id;
+
+                if ($scope.newAvatarId) {
+
+                    $("#profile-dropdown .sub-avatar").css({
+                        "background-image":
+                            'url("' + $scope.newAvatarId + '.iix?t=small")',
+                        "color": "transparent"
+                    });
+                }
+            });
+        }
+    );
+
+    // =====================================
+    // ORIGINAL HOMEPAGE CHECK
+    // =====================================
+
+    $scope.isHomepage = function() {
+
+        if (!$scope.page.id) {
+            return true;
+        }
+
+        if ($scope.page.id == $scope.portal.homepage_dv) {
+            return true;
+        }
+
+        return false;
+    };
+
+    // =====================================
+    // ORIGINAL ACCESSIBILITY NAVIGATION
+    // =====================================
+
+    $timeout(function() {
+
+        function isMDScreenSize() {
+            return $window.matchMedia('(max-width: 992px)').matches;
+        }
+
+        var navbarElement = $element.find('.navbar');
+
+        if (navbarElement.length > 0) {
+
+            spAriaUtil.initDropdownKeyboardNav(
+                navbarElement,
+                {
+                    checkMdScreenSize: true,
+                    isMDScreenSize: isMDScreenSize
+                }
+            );
+        }
+
+    });
+
+    // =====================================
+    // CLEANUP
+    // =====================================
+
+    $scope.$on('$destroy', function() {
+
+        if (observer) {
+            observer.disconnect();
+        }
+
+        avatarListener();
+    });
+
+}]]></client_script>
+        <controller_as>c</controller_as>
+        <css>
+/* =========================================
+   Professional File Manager Theme
+   Navy + Teal + Soft White
+========================================= */
+
+/* Header */
+.navbar {
+  background-color: #172B4D;
+  transition: 250ms opacity ease-in-out;
+  -webkit-transition: 250ms opacity ease-in-out;
+  border: 0;
+  border-bottom: 2px solid #14B8A6;
+}
+
+.navbar-fade {
+  opacity: 0.4;
+}
+
+/* Navigation toggle */
+.navbar-inverse .navbar-toggle {
+  border-color: #64748B;
+}
+
+.navbar-inverse .navbar-toggle:hover,
+.navbar-inverse .navbar-toggle:focus {
+  background-color: #243B5A;
+  border-color: #14B8A6;
+}
+
+/* Logo */
+.navbar-brand {
+  height: 60px;
+  max-height: 60px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  color: #FFFFFF !important;
+}
+
+.navbar-brand img,
+.navbar-brand span {
+  margin-left: $sp-logo-margin-x;
+  margin-right: $sp-logo-margin-x;
+  margin-top: $sp-logo-margin-y;
+  margin-bottom: $sp-logo-margin-y;
+  display: block;
+  max-height: $sp-logo-max-height;
+  max-width: $sp-logo-max-width;
+  position: relative;
+  overflow: hidden;
+}
+
+.navbar-brand img {
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+
+.navbar-brand:hover,
+.navbar-brand:focus {
+  color: #99F6E4 !important;
+}
+
+.responsive-tablet {
+  .navbar-brand img,
+  .navbar-brand span {
+    max-width: $sp-logo-mobile-max-width;
+  }
+}
+
+/* Header links */
+header[role="banner"],
+.nav &gt; li &gt; a {
+  max-height: 60px;
+}
+
+.nav &gt; li &gt; a span.fa {
+  margin-left: 0.2rem;
+}
+
+.navbar-inverse .navbar-nav &gt; li &gt; a {
+  color: #E2E8F0;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.navbar-inverse .navbar-nav &gt; li &gt; a:hover,
+.navbar-inverse .navbar-nav &gt; li &gt; a:focus {
+  color: #FFFFFF;
+  background-color: #243B5A;
+}
+
+/* Breadcrumb */
+.breadcrumb-container {
+  background-color: #F8FAFC;
+}
+
+/* Native mobile app */
+.navbar-inverse.is-native {
+  background-color: #172B4D;
+}
+
+nav {
+  margin-bottom: 0;
+  border-radius: 0;
+
+  .toggle-dropdown {
+    height: 60px;
+  }
+}
+
+/* Navigation spacing */
+.navbar-right {
+  padding-right: 0;
+  padding-left: 7px;
+}
+
+.navbar-nav {
+  margin: 0;
+}
+
+/* Profile dropdown */
+.navbar-inverse .dropdown-menu {
+  background-color: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+}
+
+.navbar-inverse .dropdown-menu &gt; li &gt; a {
+  color: #334155;
+  padding: 10px 16px;
+}
+
+.navbar-inverse .dropdown-menu &gt; li &gt; a:hover,
+.navbar-inverse .dropdown-menu &gt; li &gt; a:focus {
+  color: #0F766E;
+  background-color: #F0FDFA;
+}
+
+/* Dropdown scrolling */
+.scrollable-dropdown {
+  max-height: 80vh;
+  overflow: auto;
+  height: auto;
+}
+
+.is-native {
+  .scrollable-dropdown {
+    max-height: 100vh;
+    overflow: scroll;
+    height: auto;
+  }
+}
+
+/* Original responsive header */
+.responsive-desktop {
+  .navbar-right {
+    display: flex !important;
+    height: auto !important;
+    align-items: center;
+  }
+}
+
+.responsive-tablet {
+  .navbar-toggle {
+    display: block;
+  }
+
+  .navbar-header {
+    float: none;
+  }
+
+  .navbar-left,
+  .navbar-right {
+    float: none !important;
+  }
+
+  .navbar-nav {
+    float: none !important;
+  }
+
+  .navbar-nav &gt; li {
+    float: none;
+  }
+
+  .navbar-nav &gt; li &gt; a {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+}
+
+/* =========================================
+   File Manager Search Bar
+========================================= */
+
+/* Desktop */
+@media (min-width: 993px) {
+
+  #responsiveNav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 60px;
+  }
+
+  #responsiveNav .navbar-header {
+    display: flex;
+    align-items: center;
+    float: none;
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 60px;
+  }
+
+  #responsiveNav .navbar-brand {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    margin-right: 12px;
+  }
+
+  .fm-search-form {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 400px;
+    min-width: 120px;
+    max-width: 520px;
+    margin: 0 auto;
+    padding: 0 12px;
+  }
+
+  .fm-search-box {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    background-color: #F8FAFC;
+    border: 1px solid #CBD5E1;
+    border-radius: 10px;
+    box-sizing: border-box;
+    transition: all 0.2s ease;
+  }
+
+  .fm-search-box:hover {
+    background-color: #FFFFFF;
+    border-color: #94A3B8;
+  }
+
+  .fm-search-box:focus-within {
+    background-color: #FFFFFF;
+    border-color: #14B8A6;
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.16);
+  }
+
+  .fm-search-icon {
+    flex: 0 0 auto;
+    color: #64748B;
+    font-size: 15px;
+    margin-right: 11px;
+  }
+
+  .fm-search-input {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: #172B4D;
+    font-size: 14px;
+    box-shadow: none;
+  }
+
+  .fm-search-input::placeholder {
+    color: #94A3B8;
+  }
+
+  .fm-search-input:focus {
+    outline: none;
+    box-shadow: none;
+  }
+
+  .fm-search-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    padding: 5px;
+    border: 0;
+    background: transparent;
+    color: #64748B;
+    cursor: pointer;
+  }
+
+  .fm-search-clear:hover {
+    color: #0F766E;
+  }
+
+  /* Keep menu and profile visible */
+  #sp-nav-bar {
+    display: flex !important;
+    align-items: center;
+    flex: 0 0 auto;
+    float: none !important;
+    min-width: max-content;
+    padding-left: 8px;
+  }
+}
+
+/* =========================================
+   Tablet and Mobile
+========================================= */
+
+@media (max-width: 992px) {
+
+  #responsiveNav {
+    display: block;
+    width: 100%;
+  }
+
+  #responsiveNav .navbar-header {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    float: none;
+    width: 100%;
+    min-height: 60px;
+  }
+
+  #responsiveNav .navbar-brand {
+    display: flex;
+    align-items: center;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 60px);
+  }
+
+  #responsiveNav .navbar-toggle {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+
+  .fm-search-form {
+    display: flex;
+    flex: 0 0 100%;
+    order: 3;
+    width: 100%;
+    margin: 8px 0 12px;
+    padding: 0 12px;
+    box-sizing: border-box;
+  }
+
+  .fm-search-box {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    height: 40px;
+    padding: 0 14px;
+    background-color: #F8FAFC;
+    border: 1px solid #CBD5E1;
+    border-radius: 10px;
+    box-sizing: border-box;
+  }
+
+  .fm-search-box:focus-within {
+    border-color: #14B8A6;
+    box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.16);
+  }
+
+  .fm-search-icon {
+    flex: 0 0 auto;
+    margin-right: 11px;
+    color: #64748B;
+  }
+
+  .fm-search-input {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    outline: none;
+    background: transparent;
+    color: #172B4D;
+    font-size: 14px;
+  }
+
+  .fm-search-input::placeholder {
+    color: #94A3B8;
+  }
+
+  .fm-search-clear {
+    border: 0;
+    background: transparent;
+    color: #64748B;
+    padding: 5px;
+  }
+
+  #sp-nav-bar {
+    width: 100%;
+  }
+}
+
+/* =========================================
+   Accessibility
+========================================= */
+
+@media screen and (-ms-high-contrast: active),
+       (forced-colors: active) {
+
+  .navbar-brand,
+  .navbar-nav &gt; li &gt; a,
+  .skip-link,
+  .btn.btn-primary,
+  .btn.btn-danger,
+  .navbar-inverse .navbar-toggle {
+    &amp;:focus {
+      outline-offset: -4px !important;
+    }
+  }
+}
+</css>
+        <data_table>sp_instance</data_table>
+        <demo_data/>
+        <description/>
+        <docs/>
+        <field_list/>
+        <has_preview>true</has_preview>
+        <id/>
+        <internal>false</internal>
+        <link><![CDATA[function(scope, element) {
+	var KEY = {
+		TAB: 9,
+		ESC: 27
+	};
+	
+	function isMDScreenSize() {
+		return window.matchMedia('(max-width: 992px)').matches;
+	}
+	
+	var navbarContainer = $('#sp-nav-bar');
+	navbarContainer.on('shown.bs.collapse', function () {
+		$('a:visible', navbarContainer).first().focus();
+	});
+	
+	// Additional mobile-specific ESC key handling for Stock Header
+	$(element).on('keyup', function(event) {
+		if (event.which == KEY.ESC) {
+			var mdScreenSize = isMDScreenSize();
+			if (mdScreenSize && $('.navbar-right').attr("aria-expanded")) {
+				closeMobileMenu();
+				
+				if ($(event.target).parents(".navbar-right").length > 0)
+					$('.navbar-toggle').focus();
+			}
+		}
+	});
+
+	$(element).on('click.nav','.navbar-collapse.in',function(e) {
+		var target = $(e.target);
+		if (target.is('a')) {
+			if (target.hasClass('sp-menu-has-items'))
+				return; // menu item has a submenu, so just toggle it
+
+			// collapse mobile nav if clicked an anchor
+			$(this).removeClass('in').addClass('collapse');
+			return;
+		}
+
+		if (target.parent().hasClass("toggle-dropdown")) {
+			// collapse mobile nav if parent has toggle-dropdown class
+			$(this).removeClass('in').addClass('collapse');
+			return;
+		}
+
+		// if neither target nor parent is an anchor, do nothing
+		if (!target.parent().is('a'))
+			return;
+
+		// collapse mobile nav if target is part of a submenu
+		if (target.parents("ul.dropdown-menu").length > 0)
+			$(this).removeClass('in').addClass('collapse');
+	});
+
+	// clicking outside the mobile menu should close the mobile menu
+	$(document).on('click', function(e) {
+		var target = $(e.target);
+		if (target.parents('.navbar-right').length == 0) {
+			closeMobileMenu();
+		}
+	});
+	
+	// Close the mobile menu when focus goes out of the menu
+	$('.navbar-right').on('keydown', 'a', function(event) {
+		if (($(this).is($('.navbar-right a').last()) && event.which == KEY.TAB && !event.shiftKey) || ($(this).is($('.navbar-right a').first()) && event.which == KEY.TAB && event.shiftKey)) {
+			closeMobileMenu();
+			setTimeout(function () {
+				window.scrollBy(0,-200);
+			});
+		}
+	});
+	
+	function closeMobileMenu() {
+		$('.navbar-right').collapse('hide');
+	}
+}]]></link>
+        <name>Copy of Stock Header</name>
+        <option_schema/>
+        <public>true</public>
+        <roles/>
+        <script><![CDATA[// Defines the support queue ID that will be linked to by the Live Chat link in header
+data.connect_support_queue_id = $sp.getValue('sp_chat_queue');
+
+data.login_page = $sp.getValue('login_page');
+
+data.profileBtnMsg = gs.getMessage('User options');
+data.toggleMsg = gs.getMessage('Toggle navigation');
+
+// Get header menu
+var menu = $sp.getValue('sp_rectangle_menu');
+
+data.menu = menu ? $sp.getWidgetFromInstance(menu) : null;
+
+data.hasLogin = false;
+data.hasMenuItems = false;
+
+// Load language selector
+data.langSelector = '';
+
+if (gs.getSession().getLanguage()) {
+    data.langSelector = $sp.getWidget('sp-lang-selector');
+}
+
+if (data.menu && data.menu.data) {
+
+    data.menu.data.replace = true;
+
+    // Hide login if menu already has link to login
+    if (data.menu.data.menu &&
+        data.menu.data.menu.items) {
+
+        data.hasMenuItems = data.menu.data.menu.items.length > 0;
+
+        for (var i in data.menu.data.menu.items) {
+
+            var item = data.menu.data.menu.items[i];
+
+            if (item.type == 'page' &&
+                item.sp_page == data.login_page) {
+
+                data.hasLogin = true;
+            }
+        }
+    }
+}
+
+// Login modal
+data.loginWidget = $sp.getWidgetFromInstance('login-modal');]]></script>
+        <servicenow>false</servicenow>
+        <static>false</static>
+        <sys_class_name>sp_header_footer</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-04 10:41:55</sys_created_on>
+        <sys_id>2cc19fdec31c5710c05a33bc05013137</sys_id>
+        <sys_mod_count>16</sys_mod_count>
+        <sys_name>Copy of Stock Header</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sp_header_footer_2cc19fdec31c5710c05a33bc05013137</sys_update_name>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-04 11:04:48</sys_updated_on>
+        <template><![CDATA[
+<div>
+  <nav id="responsiveNav"
+       class="navbar-inverse"
+       ng-class="::{'navbar':!isViewNative, 'is-native': isViewNative}"
+       role="navigation"
+       aria-label="${Primary}">
+
+    <div ng-show="::!isViewNative" class="navbar-header">
+
+      <!-- File Manager Logo / Portal Title -->
+      <a class="navbar-brand"
+         ng-if="::!portal.logo"
+         href="?id={{::portal.homepage_dv}}">
+        <span ng-bind="portal.title"></span>
+      </a>
+
+      <a class="navbar-brand navbar-brand-logo"
+         ng-if="::portal.logo"
+         ng-href="?id={{::portal.homepage_dv}}"
+         ng-click="collapse()"
+         aria-label="{{::logoText}}">
+        <img ng-src="{{::portal.logo}}"
+             title="{{::portal.title}}"
+             alt="{{::portal.logo_alt_text || portal.title}} ${Logo}" />
+      </a>
+
+      <!-- Center Search Bar -->
+      <form class="fm-search-form"
+            ng-submit="submitSearch()"
+            role="search">
+
+        <div class="fm-search-box">
+          <i class="fa fa-search fm-search-icon"
+             aria-hidden="true"></i>
+
+          <input type="text"
+                 class="fm-search-input"
+                 ng-model="searchTerm"
+                 placeholder="Search files and folders..."
+                 aria-label="Search files and folders" />
+
+          <button type="button"
+                  class="fm-search-clear"
+                  ng-if="searchTerm"
+                  ng-click="clearSearch()"
+                  aria-label="Clear search">
+            <i class="fa fa-times" aria-hidden="true"></i>
+          </button>
+        </div>
+      </form>
+
+      <!-- Mobile Navigation Toggle -->
+      <button ng-if="data.hasMenuItems || (!user.logged_in && page.id != portal.login_page_dv && !data.hasLogin) || user.logged_in"
+              type="button"
+              class="navbar-toggle collapsed"
+              data-toggle="collapse"
+              data-placement="bottom"
+              data-toggle-second="tooltip"
+              data-original-title="{{::data.toggleMsg}}"
+              data-target="#sp-nav-bar"
+              aria-haspopup="menu">
+
+        <span class="sr-only">${Toggle navigation}</span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+        <span class="icon-bar"></span>
+      </button>
+
+    </div>
+
+    <!-- Original Menu, Language and Profile Section -->
+    <div sp-navbar-toggle=""
+         class="collapse navbar-right"
+         id="sp-nav-bar"
+         role="navigation">
+
+      <sp-widget widget="::data.menu"></sp-widget>
+
+      <sp-widget widget="::data.langSelector"></sp-widget>
+
+      <ul ng-if="(!user.logged_in && page.id != portal.login_page_dv && !data.hasLogin)"
+          class="nav navbar-nav"
+          role="presentation">
+        <li role="presentation">
+          <a href ng-click="::openLogin()">${Login}</a>
+        </li>
+      </ul>
+
+      <ul ng-if="user.logged_in" class="nav navbar-nav">
+
+        <li ng-if="::(data.connect_support_queue_id && !isAgentChatConfigured)">
+          <a href ng-click="openPopUp()" role="button">${Live Chat}</a>
+        </li>
+
+        <li ng-if="showAvatar" class="hidden-xs hidden-sm dropdown">
+          <a href
+             class="toggle-dropdown"
+             data-toggle="dropdown"
+             aria-expanded="false"
+             aria-label="{{::data.profileBtnMsg}}: {{::user.name}}"
+             id="profile-dropdown"
+             role="button"
+             aria-haspopup="true">
+
+            <span class="navbar-avatar" aria-hidden="true">
+              <sn-avatar class="avatar-small-medium" primary="avatarProfile" />
+            </span>
+
+            <span class="visible-lg-inline">{{::user.name}}</span>
+          </a>
+
+          <ul class="dropdown-menu"
+              aria-label="{{::data.profileBtnMsg}}">
+            <li>
+              <a tabindex="-1"
+                 ng-href="?id=user_profile&sys_id={{::user.sys_id}}">
+                ${Profile}
+              </a>
+            </li>
+
+            <li ng-if="::!(isViewNative || isViewNativeTablet)">
+              <a tabindex="-1" href="{{::portal.logoutUrl}}">
+                ${Logout}
+              </a>
+            </li>
+          </ul>
+        </li>
+
+        <li ng-if="showSMAvatar"
+            class="visible-xs-block visible-sm-block">
+          <a ng-href="?id=user_profile&sys_id={{::user.sys_id}}"
+             ng-click="collapse()">
+
+            <span class="navbar-avatar">
+              <sn-avatar class="avatar-small-medium" primary="avatarProfile" />
+            </span>
+
+            {{::user.name}}
+          </a>
+        </li>
+
+        <li ng-if="::!(isViewNative || isViewNativeTablet)"
+            class="visible-xs-block visible-sm-block">
+          <a ng-href="{{::portal.logoutUrl}}" ng-click="collapse()">
+            ${Logout}
+          </a>
+        </li>
+
+      </ul>
+    </div>
+  </nav>
+</div>
+]]></template>
+    </sp_header_footer>
+</record_update>

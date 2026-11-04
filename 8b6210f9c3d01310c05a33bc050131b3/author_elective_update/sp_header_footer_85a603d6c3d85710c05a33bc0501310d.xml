@@ -1,0 +1,1224 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sp_header_footer">
+    <sp_header_footer action="DELETE">
+        <category>standard</category>
+        <client_script><![CDATA[function($rootScope, $scope, snRecordWatcher, spUtil,
+         $location, $uibModal, cabrillo, $timeout,
+         $window, i18n, spAriaUtil, $element, $injector) {
+
+    // Original header variables
+    $scope.logoText = $scope.data.logoText || '';
+    $scope.collapse = true;
+
+    // Search functionality
+    $scope.searchTerm = '';
+
+    $scope.submitSearch = function() {
+        var query = ($scope.searchTerm || '').trim();
+
+        if (!query) {
+            return;
+        }
+
+        $rootScope.$broadcast('fm.search', {
+            query: query
+        });
+    };
+
+    $scope.clearSearch = function() {
+        $scope.searchTerm = '';
+
+        $rootScope.$broadcast('fm.search', {
+            query: ''
+        });
+    };
+
+    // Original avatar functionality
+    $scope.avatarProfile = {
+        userID: $window.NOW.user_id,
+        name: $window.NOW.user_display_name,
+        initials: $window.NOW.user_initials
+    };
+
+    if ($window.NOW.user_avatar) {
+        $scope.avatarProfile.avatar = $window.NOW.user_avatar;
+    }
+
+    if (cabrillo.isNative()) {
+        $scope.isNative = true;
+    }
+
+    // Original popup functionality
+    $scope.openPopUp = function() {
+        $scope.modalInstance = $uibModal.open({
+            templateUrl: 'sp-modal',
+            scope: $scope
+        });
+    };
+
+    // Login popup
+    $scope.openLogin = function() {
+        var loginWidget = $injector.get('spUtil');
+
+        if ($scope.data.loginWidget) {
+            loginWidget.addInfoMessage(
+                i18n.getMessage('Please login to continue')
+            );
+        }
+    };
+
+    // Responsive avatar handling
+    var nav = document.getElementById('responsiveNav');
+
+    function isMDScreenSize() {
+        return $window.matchMedia('(max-width: 992px)').matches;
+    }
+
+    $scope.showSMAvatar = isMDScreenSize();
+    $scope.showAvatar = !isMDScreenSize();
+
+    $scope.isAgentChatConfigured =
+        typeof g_has_agent_chat_config !== 'undefined' &&
+        g_has_agent_chat_config;
+
+    function updateResponsiveClasses(width) {
+        if (!nav) {
+            return;
+        }
+
+        var isMobile = width <= 992;
+
+        if (isMobile) {
+            nav.classList.add('responsive-tablet');
+            nav.classList.remove('responsive-desktop');
+        } else {
+            nav.classList.add('responsive-desktop');
+            nav.classList.remove('responsive-tablet');
+        }
+
+        $scope.$applyAsync(function() {
+            $scope.showSMAvatar = isMobile;
+            $scope.showAvatar = !isMobile;
+        });
+    }
+
+    if (nav) {
+        updateResponsiveClasses(nav.getBoundingClientRect().width);
+    }
+
+    var observer = null;
+
+    if (nav && $window.ResizeObserver) {
+        observer = new $window.ResizeObserver(function(entries) {
+            if (entries.length) {
+                updateResponsiveClasses(entries[0].contentRect.width);
+            }
+        });
+
+        observer.observe(nav);
+    }
+
+    // Original avatar change listener
+    var avatarListener = $rootScope.$on(
+        'sp.avatar_changed',
+        function(event, newAvatar) {
+            if (newAvatar) {
+                $scope.avatarProfile.avatar = newAvatar;
+            }
+        }
+    );
+
+    // Homepage detection
+    $scope.isHomepage =
+        $location.path() === '/' ||
+        $location.path() === '';
+
+    // Accessibility
+    $timeout(function() {
+        if (spAriaUtil && spAriaUtil.initDropdownKeyboardNav) {
+            spAriaUtil.initDropdownKeyboardNav($element);
+        }
+    });
+
+    // Cleanup
+    $scope.$on('$destroy', function() {
+        if (observer) {
+            observer.disconnect();
+        }
+
+        avatarListener();
+    });
+}]]></client_script>
+        <controller_as>c</controller_as>
+        <css>&#13;
+/* ========================================&#13;
+   FILE MANAGER HEADER&#13;
+======================================== */&#13;
+&#13;
+.fm-navbar {&#13;
+    display: flex !important;&#13;
+    align-items: center;&#13;
+    justify-content: space-between;&#13;
+    width: 100%;&#13;
+    min-height: 64px !important;&#13;
+    height: 64px !important;&#13;
+    padding: 0 20px;&#13;
+    background: #FFFFFF !important;&#13;
+    border: none !important;&#13;
+    border-bottom: 1px solid #D7E2E7 !important;&#13;
+    border-radius: 0 !important;&#13;
+    margin: 0 !important;&#13;
+    box-shadow: 0 1px 4px rgba(23,53,74,.05);&#13;
+}&#13;
+&#13;
+/* Logo and search section */&#13;
+&#13;
+.fm-navbar .navbar-header {&#13;
+    display: flex !important;&#13;
+    align-items: center;&#13;
+    float: none !important;&#13;
+    flex: 1 1 auto;&#13;
+    width: auto;&#13;
+    min-width: 0;&#13;
+    height: 64px;&#13;
+    min-height: 64px;&#13;
+    gap: 20px;&#13;
+}&#13;
+&#13;
+/* Logo */&#13;
+&#13;
+.fm-navbar .navbar-brand {&#13;
+    display: flex !important;&#13;
+    align-items: center;&#13;
+    flex: 0 0 auto;&#13;
+    height: 64px !important;&#13;
+    padding: 0 !important;&#13;
+    margin: 0 !important;&#13;
+    color: #17354A !important;&#13;
+    font-size: 21px;&#13;
+    font-weight: 600;&#13;
+    white-space: nowrap;&#13;
+}&#13;
+&#13;
+.fm-navbar .navbar-brand img {&#13;
+    max-height: 38px !important;&#13;
+    max-width: 170px;&#13;
+    width: auto;&#13;
+    margin: 0 !important;&#13;
+    top: auto !important;&#13;
+    transform: none !important;&#13;
+}&#13;
+&#13;
+/* Search */&#13;
+&#13;
+.fm-search-form {&#13;
+    display: flex !important;&#13;
+    align-items: center;&#13;
+    flex: 1 1 500px;&#13;
+    width: 100%;&#13;
+    max-width: none !important;&#13;
+    min-width: 180px;&#13;
+    height: 42px;&#13;
+    margin: 0 15px;&#13;
+    padding: 0 12px;&#13;
+    background: #F1F7F8;&#13;
+    border: 1px solid #B9CFD9;&#13;
+    border-radius: 8px;&#13;
+    transition: .2s ease;&#13;
+}&#13;
+&#13;
+.fm-search-form:focus-within {&#13;
+    background: #FFFFFF;&#13;
+    border-color: #0787A6;&#13;
+    box-shadow: 0 0 0 3px rgba(7,135,166,.10);&#13;
+}&#13;
+&#13;
+.fm-search-input {&#13;
+    flex: 1 1 auto;&#13;
+    width: 100%;&#13;
+    min-width: 0;&#13;
+    height: 100%;&#13;
+    border: none !important;&#13;
+    outline: none !important;&#13;
+    background: transparent !important;&#13;
+    box-shadow: none !important;&#13;
+    font-size: 14px;&#13;
+    color: #17354A;&#13;
+}&#13;
+&#13;
+.fm-search-icon {&#13;
+    color: #0787A6;&#13;
+    margin-right: 10px;&#13;
+}&#13;
+&#13;
+.fm-search-clear,&#13;
+.fm-search-submit {&#13;
+    border: none;&#13;
+    background: transparent;&#13;
+    color: #526879;&#13;
+    cursor: pointer;&#13;
+}&#13;
+&#13;
+/* Existing profile, menu and language */&#13;
+&#13;
+.fm-navbar .navbar-right {&#13;
+    display: flex !important;&#13;
+    align-items: center;&#13;
+    flex: 0 0 auto;&#13;
+    float: none !important;&#13;
+    min-height: 64px;&#13;
+    padding: 0 !important;&#13;
+}&#13;
+&#13;
+.fm-navbar .navbar-nav {&#13;
+    display: flex;&#13;
+    align-items: center;&#13;
+    margin: 0;&#13;
+}&#13;
+&#13;
+.fm-navbar .nav &gt; li &gt; a {&#13;
+    color: #17354A !important;&#13;
+    padding: 15px 12px;&#13;
+}&#13;
+&#13;
+.fm-navbar .nav &gt; li &gt; a:hover {&#13;
+    background: #F1F7F8 !important;&#13;
+    color: #0787A6 !important;&#13;
+}&#13;
+&#13;
+/* Profile dropdown */&#13;
+&#13;
+.fm-navbar .navbar-avatar {&#13;
+    display: inline-flex;&#13;
+    align-items: center;&#13;
+    vertical-align: middle;&#13;
+    margin-right: 6px;&#13;
+}&#13;
+&#13;
+.fm-navbar .dropdown-menu {&#13;
+    z-index: 1050;&#13;
+    min-width: 160px;&#13;
+    background: #FFFFFF;&#13;
+    border: 1px solid #D7E2E7;&#13;
+    border-radius: 8px;&#13;
+    box-shadow: 0 5px 18px rgba(23,53,74,.12);&#13;
+}&#13;
+&#13;
+.fm-navbar .dropdown-menu &gt; li &gt; a {&#13;
+    padding: 10px 16px;&#13;
+    color: #17354A;&#13;
+}&#13;
+&#13;
+.fm-navbar .dropdown-menu &gt; li &gt; a:hover {&#13;
+    background: #E5F5F9;&#13;
+    color: #0787A6;&#13;
+}&#13;
+&#13;
+/* Tablet and mobile */&#13;
+&#13;
+@media (max-width: 992px) {&#13;
+&#13;
+    .fm-navbar {&#13;
+        display: block !important;&#13;
+        height: auto !important;&#13;
+        min-height: 64px !important;&#13;
+        padding: 0;&#13;
+    }&#13;
+&#13;
+    .fm-navbar .navbar-header {&#13;
+        display: flex !important;&#13;
+        flex-wrap: wrap;&#13;
+        width: 100%;&#13;
+        height: auto;&#13;
+        min-height: 64px;&#13;
+        padding: 8px 14px;&#13;
+        gap: 10px;&#13;
+    }&#13;
+&#13;
+    .fm-navbar .navbar-brand {&#13;
+        height: 42px !important;&#13;
+    }&#13;
+&#13;
+    .fm-search-form {&#13;
+        order: 3;&#13;
+        flex: 1 0 100%;&#13;
+        width: 100%;&#13;
+        margin: 0;&#13;
+        height: 40px;&#13;
+    }&#13;
+&#13;
+    .fm-navbar .navbar-toggle {&#13;
+        display: block;&#13;
+        margin: 5px 0 5px auto;&#13;
+    }&#13;
+&#13;
+    .fm-navbar .navbar-collapse {&#13;
+        width: 100%;&#13;
+        background: #FFFFFF;&#13;
+    }&#13;
+&#13;
+    .fm-navbar .navbar-right {&#13;
+        display: block !important;&#13;
+        min-height: auto;&#13;
+    }&#13;
+&#13;
+    .fm-navbar .navbar-nav {&#13;
+        display: block;&#13;
+    }&#13;
+}&#13;
+</css>
+        <data_table>sp_instance</data_table>
+        <demo_data/>
+        <description/>
+        <docs/>
+        <field_list/>
+        <has_preview>true</has_preview>
+        <id/>
+        <internal>false</internal>
+        <link><![CDATA[function(scope, element) {
+
+    var KEY = {
+        TAB: 9,
+        ESC: 27
+    };
+
+    var navbarContainer = $('#sp-nav-bar');
+    var navbarToggle = element.find('.navbar-toggle');
+
+    function isMDScreenSize() {
+        return window.matchMedia('(max-width: 992px)').matches;
+    }
+
+    // Close mobile menu
+    function closeMobileMenu() {
+        if (isMDScreenSize() &&
+            navbarContainer.hasClass('in')) {
+            navbarContainer.collapse('hide');
+        }
+    }
+
+    // Focus first navigation link when menu opens
+    navbarContainer.on(
+        'shown.bs.collapse.fmHeader',
+        function() {
+            $('a:visible', navbarContainer).first().focus();
+        }
+    );
+
+    // Escape key
+    element.on('keyup.fmHeader', function(event) {
+        if (event.which === KEY.ESC) {
+            closeMobileMenu();
+
+            if (navbarToggle.length) {
+                navbarToggle.focus();
+            }
+        }
+    });
+
+    // Close menu after selecting a navigation link
+    element.on(
+        'click.fmHeader',
+        '.navbar-collapse.in a',
+        function() {
+            closeMobileMenu();
+        }
+    );
+
+    // Outside click
+    function outsideClickHandler(event) {
+        if (!isMDScreenSize()) {
+            return;
+        }
+
+        var target = $(event.target);
+
+        if (
+            target.closest('#sp-nav-bar').length === 0 &&
+            target.closest('.navbar-toggle').length === 0
+        ) {
+            closeMobileMenu();
+        }
+    }
+
+    $(document).on(
+        'click.fmHeaderOutside',
+        outsideClickHandler
+    );
+
+    // Keyboard navigation
+    navbarContainer.on(
+        'keydown.fmHeader',
+        'a',
+        function(event) {
+            if (event.which === KEY.ESC) {
+                closeMobileMenu();
+
+                if (navbarToggle.length) {
+                    navbarToggle.focus();
+                }
+            }
+        }
+    );
+
+    // Cleanup
+    scope.$on('$destroy', function() {
+        navbarContainer.off('.fmHeader');
+        element.off('.fmHeader');
+
+        $(document).off(
+            'click.fmHeaderOutside',
+            outsideClickHandler
+        );
+    });
+}]]></link>
+        <name>file Manager</name>
+        <option_schema/>
+        <public>true</public>
+        <roles/>
+        <script><![CDATA[(function () {
+
+    data.connect_support_queue_id = $sp.getValue('sp_chat_queue');
+    data.login_page = $sp.getValue('login_page');
+    data.profileBtnMsg = gs.getMessage('User options');
+    data.toggleMsg = gs.getMessage('Toggle navigation');
+
+    var menu = $sp.getValue('sp_rectangle_menu');
+
+    data.menu = menu ? $sp.getWidgetFromInstance(menu) : null;
+
+    data.hasMenuItems = false;
+    data.hasLogin = false;
+
+    if (data.menu && data.menu.data &&
+        data.menu.data.menu) {
+
+        data.menu.data.replace = true;
+
+        var items = data.menu.data.menu.items || [];
+
+        data.hasMenuItems = items.length > 0;
+
+        for (var i = 0; i < items.length; i++) {
+
+            var item = items[i];
+
+            if (item.type == 'page' &&
+                item.sp_page == data.login_page) {
+
+                data.hasLogin = true;
+            }
+        }
+    }
+
+    data.langSelector = '';
+
+    try {
+        data.langSelector = $sp.getWidget('sp-lang-selector');
+    } catch (e) {
+        gs.warn('Language selector widget unavailable: ' + e.message);
+    }
+
+    data.loginWidget = $sp.getWidgetFromInstance('login-modal');
+
+})();]]></script>
+        <servicenow>false</servicenow>
+        <static>false</static>
+        <sys_class_name>sp_header_footer</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-04 09:53:20</sys_created_on>
+        <sys_id>85a603d6c3d85710c05a33bc0501310d</sys_id>
+        <sys_mod_count>5</sys_mod_count>
+        <sys_name>file Manager</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sp_header_footer_85a603d6c3d85710c05a33bc0501310d</sys_update_name>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-04 10:32:06</sys_updated_on>
+        <template><![CDATA[
+<!-- Desktop Profile Dropdown -->
+<li ng-if="showAvatar" class="hidden-xs hidden-sm dropdown">
+
+    <a href
+       class="toggle-dropdown"
+       data-toggle="dropdown"
+       aria-expanded="false"
+       aria-label="{{::data.profileBtnMsg}}: {{::user.name}}"
+       id="profile-dropdown"
+       role="button"
+       aria-haspopup="true">
+
+        <span class="navbar-avatar" aria-hidden="true">
+            <sn-avatar class="avatar-small-medium"
+                       primary="avatarProfile" />
+        </span>
+
+        <span class="visible-lg-inline">
+            {{::user.name}}
+        </span>
+    </a>
+
+    <ul class="dropdown-menu"
+        aria-label="{{::data.profileBtnMsg}}">
+
+        <li>
+            <a tabindex="-1"
+               ng-href="?id=user_profile&sys_id={{::user.sys_id}}">
+                ${Profile}
+            </a>
+        </li>
+
+        <li ng-if="::!(isViewNative || isViewNativeTablet)">
+            <a tabindex="-1"
+               href="{{::portal.logoutUrl}}">
+                ${Logout}
+            </a>
+        </li>
+
+    </ul>
+</li>
+
+<!-- Mobile Profile -->
+<li ng-if="showSMAvatar"
+    class="visible-xs-block visible-sm-block">
+
+    <a ng-href="?id=user_profile&sys_id={{::user.sys_id}}"
+       ng-click="collapse()">
+
+        <span class="navbar-avatar">
+            <sn-avatar class="avatar-small-medium"
+                       primary="avatarProfile" />
+        </span>
+
+        {{::user.name}}
+    </a>
+</li>
+
+<!-- Mobile Logout -->
+<li ng-if="::!(isViewNative || isViewNativeTablet)"
+    class="visible-xs-block visible-sm-block">
+
+    <a ng-href="{{::portal.logoutUrl}}"
+       ng-click="collapse()">
+        ${Logout}
+    </a>
+</li>
+]]></template>
+    </sp_header_footer>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</application>
+        <file_path/>
+        <instance_id>e3a722061b2275d01024eb9b2d4bcb3f</instance_id>
+        <instance_name>dev215720</instance_name>
+        <name>sp_header_footer_85a603d6c3d85710c05a33bc0501310d</name>
+        <payload>&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;record_update table="sp_header_footer"&gt;&lt;sp_header_footer action="INSERT_OR_UPDATE"&gt;&lt;category&gt;standard&lt;/category&gt;&lt;client_script&gt;&lt;![CDATA[function($rootScope, $scope, snRecordWatcher, spUtil,
+         $location, $uibModal, cabrillo, $timeout,
+         $window, i18n, spAriaUtil, $element, $injector) {
+
+    // Original header variables
+    $scope.logoText = $scope.data.logoText || '';
+    $scope.collapse = true;
+
+    // Search functionality
+    $scope.searchTerm = '';
+
+    $scope.submitSearch = function() {
+        var query = ($scope.searchTerm || '').trim();
+
+        if (!query) {
+            return;
+        }
+
+        $rootScope.$broadcast('fm.search', {
+            query: query
+        });
+    };
+
+    $scope.clearSearch = function() {
+        $scope.searchTerm = '';
+
+        $rootScope.$broadcast('fm.search', {
+            query: ''
+        });
+    };
+
+    // Original avatar functionality
+    $scope.avatarProfile = {
+        userID: $window.NOW.user_id,
+        name: $window.NOW.user_display_name,
+        initials: $window.NOW.user_initials
+    };
+
+    if ($window.NOW.user_avatar) {
+        $scope.avatarProfile.avatar = $window.NOW.user_avatar;
+    }
+
+    if (cabrillo.isNative()) {
+        $scope.isNative = true;
+    }
+
+    // Original popup functionality
+    $scope.openPopUp = function() {
+        $scope.modalInstance = $uibModal.open({
+            templateUrl: 'sp-modal',
+            scope: $scope
+        });
+    };
+
+    // Login popup
+    $scope.openLogin = function() {
+        var loginWidget = $injector.get('spUtil');
+
+        if ($scope.data.loginWidget) {
+            loginWidget.addInfoMessage(
+                i18n.getMessage('Please login to continue')
+            );
+        }
+    };
+
+    // Responsive avatar handling
+    var nav = document.getElementById('responsiveNav');
+
+    function isMDScreenSize() {
+        return $window.matchMedia('(max-width: 992px)').matches;
+    }
+
+    $scope.showSMAvatar = isMDScreenSize();
+    $scope.showAvatar = !isMDScreenSize();
+
+    $scope.isAgentChatConfigured =
+        typeof g_has_agent_chat_config !== 'undefined' &amp;&amp;
+        g_has_agent_chat_config;
+
+    function updateResponsiveClasses(width) {
+        if (!nav) {
+            return;
+        }
+
+        var isMobile = width &lt;= 992;
+
+        if (isMobile) {
+            nav.classList.add('responsive-tablet');
+            nav.classList.remove('responsive-desktop');
+        } else {
+            nav.classList.add('responsive-desktop');
+            nav.classList.remove('responsive-tablet');
+        }
+
+        $scope.$applyAsync(function() {
+            $scope.showSMAvatar = isMobile;
+            $scope.showAvatar = !isMobile;
+        });
+    }
+
+    if (nav) {
+        updateResponsiveClasses(nav.getBoundingClientRect().width);
+    }
+
+    var observer = null;
+
+    if (nav &amp;&amp; $window.ResizeObserver) {
+        observer = new $window.ResizeObserver(function(entries) {
+            if (entries.length) {
+                updateResponsiveClasses(entries[0].contentRect.width);
+            }
+        });
+
+        observer.observe(nav);
+    }
+
+    // Original avatar change listener
+    var avatarListener = $rootScope.$on(
+        'sp.avatar_changed',
+        function(event, newAvatar) {
+            if (newAvatar) {
+                $scope.avatarProfile.avatar = newAvatar;
+            }
+        }
+    );
+
+    // Homepage detection
+    $scope.isHomepage =
+        $location.path() === '/' ||
+        $location.path() === '';
+
+    // Accessibility
+    $timeout(function() {
+        if (spAriaUtil &amp;&amp; spAriaUtil.initDropdownKeyboardNav) {
+            spAriaUtil.initDropdownKeyboardNav($element);
+        }
+    });
+
+    // Cleanup
+    $scope.$on('$destroy', function() {
+        if (observer) {
+            observer.disconnect();
+        }
+
+        avatarListener();
+    });
+}]]&gt;&lt;/client_script&gt;&lt;controller_as&gt;c&lt;/controller_as&gt;&lt;css&gt;&amp;#13;
+/* ========================================&amp;#13;
+   FILE MANAGER HEADER&amp;#13;
+======================================== */&amp;#13;
+&amp;#13;
+.fm-navbar {&amp;#13;
+    display: flex !important;&amp;#13;
+    align-items: center;&amp;#13;
+    justify-content: space-between;&amp;#13;
+    width: 100%;&amp;#13;
+    min-height: 64px !important;&amp;#13;
+    height: 64px !important;&amp;#13;
+    padding: 0 20px;&amp;#13;
+    background: #FFFFFF !important;&amp;#13;
+    border: none !important;&amp;#13;
+    border-bottom: 1px solid #D7E2E7 !important;&amp;#13;
+    border-radius: 0 !important;&amp;#13;
+    margin: 0 !important;&amp;#13;
+    box-shadow: 0 1px 4px rgba(23,53,74,.05);&amp;#13;
+}&amp;#13;
+&amp;#13;
+/* Logo and search section */&amp;#13;
+&amp;#13;
+.fm-navbar .navbar-header {&amp;#13;
+    display: flex !important;&amp;#13;
+    align-items: center;&amp;#13;
+    float: none !important;&amp;#13;
+    flex: 1 1 auto;&amp;#13;
+    width: auto;&amp;#13;
+    min-width: 0;&amp;#13;
+    height: 64px;&amp;#13;
+    min-height: 64px;&amp;#13;
+    gap: 20px;&amp;#13;
+}&amp;#13;
+&amp;#13;
+/* Logo */&amp;#13;
+&amp;#13;
+.fm-navbar .navbar-brand {&amp;#13;
+    display: flex !important;&amp;#13;
+    align-items: center;&amp;#13;
+    flex: 0 0 auto;&amp;#13;
+    height: 64px !important;&amp;#13;
+    padding: 0 !important;&amp;#13;
+    margin: 0 !important;&amp;#13;
+    color: #17354A !important;&amp;#13;
+    font-size: 21px;&amp;#13;
+    font-weight: 600;&amp;#13;
+    white-space: nowrap;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-navbar .navbar-brand img {&amp;#13;
+    max-height: 38px !important;&amp;#13;
+    max-width: 170px;&amp;#13;
+    width: auto;&amp;#13;
+    margin: 0 !important;&amp;#13;
+    top: auto !important;&amp;#13;
+    transform: none !important;&amp;#13;
+}&amp;#13;
+&amp;#13;
+/* Search */&amp;#13;
+&amp;#13;
+.fm-search-form {&amp;#13;
+    display: flex !important;&amp;#13;
+    align-items: center;&amp;#13;
+    flex: 1 1 500px;&amp;#13;
+    width: 100%;&amp;#13;
+    max-width: none !important;&amp;#13;
+    min-width: 180px;&amp;#13;
+    height: 42px;&amp;#13;
+    margin: 0 15px;&amp;#13;
+    padding: 0 12px;&amp;#13;
+    background: #F1F7F8;&amp;#13;
+    border: 1px solid #B9CFD9;&amp;#13;
+    border-radius: 8px;&amp;#13;
+    transition: .2s ease;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-search-form:focus-within {&amp;#13;
+    background: #FFFFFF;&amp;#13;
+    border-color: #0787A6;&amp;#13;
+    box-shadow: 0 0 0 3px rgba(7,135,166,.10);&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-search-input {&amp;#13;
+    flex: 1 1 auto;&amp;#13;
+    width: 100%;&amp;#13;
+    min-width: 0;&amp;#13;
+    height: 100%;&amp;#13;
+    border: none !important;&amp;#13;
+    outline: none !important;&amp;#13;
+    background: transparent !important;&amp;#13;
+    box-shadow: none !important;&amp;#13;
+    font-size: 14px;&amp;#13;
+    color: #17354A;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-search-icon {&amp;#13;
+    color: #0787A6;&amp;#13;
+    margin-right: 10px;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-search-clear,&amp;#13;
+.fm-search-submit {&amp;#13;
+    border: none;&amp;#13;
+    background: transparent;&amp;#13;
+    color: #526879;&amp;#13;
+    cursor: pointer;&amp;#13;
+}&amp;#13;
+&amp;#13;
+/* Existing profile, menu and language */&amp;#13;
+&amp;#13;
+.fm-navbar .navbar-right {&amp;#13;
+    display: flex !important;&amp;#13;
+    align-items: center;&amp;#13;
+    flex: 0 0 auto;&amp;#13;
+    float: none !important;&amp;#13;
+    min-height: 64px;&amp;#13;
+    padding: 0 !important;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-navbar .navbar-nav {&amp;#13;
+    display: flex;&amp;#13;
+    align-items: center;&amp;#13;
+    margin: 0;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-navbar .nav &amp;gt; li &amp;gt; a {&amp;#13;
+    color: #17354A !important;&amp;#13;
+    padding: 15px 12px;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-navbar .nav &amp;gt; li &amp;gt; a:hover {&amp;#13;
+    background: #F1F7F8 !important;&amp;#13;
+    color: #0787A6 !important;&amp;#13;
+}&amp;#13;
+&amp;#13;
+/* Profile dropdown */&amp;#13;
+&amp;#13;
+.fm-navbar .navbar-avatar {&amp;#13;
+    display: inline-flex;&amp;#13;
+    align-items: center;&amp;#13;
+    vertical-align: middle;&amp;#13;
+    margin-right: 6px;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-navbar .dropdown-menu {&amp;#13;
+    z-index: 1050;&amp;#13;
+    min-width: 160px;&amp;#13;
+    background: #FFFFFF;&amp;#13;
+    border: 1px solid #D7E2E7;&amp;#13;
+    border-radius: 8px;&amp;#13;
+    box-shadow: 0 5px 18px rgba(23,53,74,.12);&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-navbar .dropdown-menu &amp;gt; li &amp;gt; a {&amp;#13;
+    padding: 10px 16px;&amp;#13;
+    color: #17354A;&amp;#13;
+}&amp;#13;
+&amp;#13;
+.fm-navbar .dropdown-menu &amp;gt; li &amp;gt; a:hover {&amp;#13;
+    background: #E5F5F9;&amp;#13;
+    color: #0787A6;&amp;#13;
+}&amp;#13;
+&amp;#13;
+/* Tablet and mobile */&amp;#13;
+&amp;#13;
+@media (max-width: 992px) {&amp;#13;
+&amp;#13;
+    .fm-navbar {&amp;#13;
+        display: block !important;&amp;#13;
+        height: auto !important;&amp;#13;
+        min-height: 64px !important;&amp;#13;
+        padding: 0;&amp;#13;
+    }&amp;#13;
+&amp;#13;
+    .fm-navbar .navbar-header {&amp;#13;
+        display: flex !important;&amp;#13;
+        flex-wrap: wrap;&amp;#13;
+        width: 100%;&amp;#13;
+        height: auto;&amp;#13;
+        min-height: 64px;&amp;#13;
+        padding: 8px 14px;&amp;#13;
+        gap: 10px;&amp;#13;
+    }&amp;#13;
+&amp;#13;
+    .fm-navbar .navbar-brand {&amp;#13;
+        height: 42px !important;&amp;#13;
+    }&amp;#13;
+&amp;#13;
+    .fm-search-form {&amp;#13;
+        order: 3;&amp;#13;
+        flex: 1 0 100%;&amp;#13;
+        width: 100%;&amp;#13;
+        margin: 0;&amp;#13;
+        height: 40px;&amp;#13;
+    }&amp;#13;
+&amp;#13;
+    .fm-navbar .navbar-toggle {&amp;#13;
+        display: block;&amp;#13;
+        margin: 5px 0 5px auto;&amp;#13;
+    }&amp;#13;
+&amp;#13;
+    .fm-navbar .navbar-collapse {&amp;#13;
+        width: 100%;&amp;#13;
+        background: #FFFFFF;&amp;#13;
+    }&amp;#13;
+&amp;#13;
+    .fm-navbar .navbar-right {&amp;#13;
+        display: block !important;&amp;#13;
+        min-height: auto;&amp;#13;
+    }&amp;#13;
+&amp;#13;
+    .fm-navbar .navbar-nav {&amp;#13;
+        display: block;&amp;#13;
+    }&amp;#13;
+}&amp;#13;
+&lt;/css&gt;&lt;data_table&gt;sp_instance&lt;/data_table&gt;&lt;demo_data/&gt;&lt;description/&gt;&lt;docs/&gt;&lt;field_list/&gt;&lt;has_preview&gt;true&lt;/has_preview&gt;&lt;id/&gt;&lt;internal&gt;false&lt;/internal&gt;&lt;link&gt;&lt;![CDATA[function(scope, element) {
+
+    var KEY = {
+        TAB: 9,
+        ESC: 27
+    };
+
+    var navbarContainer = $('#sp-nav-bar');
+    var navbarToggle = element.find('.navbar-toggle');
+
+    function isMDScreenSize() {
+        return window.matchMedia('(max-width: 992px)').matches;
+    }
+
+    // Close mobile menu
+    function closeMobileMenu() {
+        if (isMDScreenSize() &amp;&amp;
+            navbarContainer.hasClass('in')) {
+            navbarContainer.collapse('hide');
+        }
+    }
+
+    // Focus first navigation link when menu opens
+    navbarContainer.on(
+        'shown.bs.collapse.fmHeader',
+        function() {
+            $('a:visible', navbarContainer).first().focus();
+        }
+    );
+
+    // Escape key
+    element.on('keyup.fmHeader', function(event) {
+        if (event.which === KEY.ESC) {
+            closeMobileMenu();
+
+            if (navbarToggle.length) {
+                navbarToggle.focus();
+            }
+        }
+    });
+
+    // Close menu after selecting a navigation link
+    element.on(
+        'click.fmHeader',
+        '.navbar-collapse.in a',
+        function() {
+            closeMobileMenu();
+        }
+    );
+
+    // Outside click
+    function outsideClickHandler(event) {
+        if (!isMDScreenSize()) {
+            return;
+        }
+
+        var target = $(event.target);
+
+        if (
+            target.closest('#sp-nav-bar').length === 0 &amp;&amp;
+            target.closest('.navbar-toggle').length === 0
+        ) {
+            closeMobileMenu();
+        }
+    }
+
+    $(document).on(
+        'click.fmHeaderOutside',
+        outsideClickHandler
+    );
+
+    // Keyboard navigation
+    navbarContainer.on(
+        'keydown.fmHeader',
+        'a',
+        function(event) {
+            if (event.which === KEY.ESC) {
+                closeMobileMenu();
+
+                if (navbarToggle.length) {
+                    navbarToggle.focus();
+                }
+            }
+        }
+    );
+
+    // Cleanup
+    scope.$on('$destroy', function() {
+        navbarContainer.off('.fmHeader');
+        element.off('.fmHeader');
+
+        $(document).off(
+            'click.fmHeaderOutside',
+            outsideClickHandler
+        );
+    });
+}]]&gt;&lt;/link&gt;&lt;name&gt;file Manager&lt;/name&gt;&lt;option_schema/&gt;&lt;public&gt;true&lt;/public&gt;&lt;roles/&gt;&lt;script&gt;&lt;![CDATA[(function () {
+
+    data.connect_support_queue_id = $sp.getValue('sp_chat_queue');
+    data.login_page = $sp.getValue('login_page');
+    data.profileBtnMsg = gs.getMessage('User options');
+    data.toggleMsg = gs.getMessage('Toggle navigation');
+
+    var menu = $sp.getValue('sp_rectangle_menu');
+
+    data.menu = menu ? $sp.getWidgetFromInstance(menu) : null;
+
+    data.hasMenuItems = false;
+    data.hasLogin = false;
+
+    if (data.menu &amp;&amp; data.menu.data &amp;&amp;
+        data.menu.data.menu) {
+
+        data.menu.data.replace = true;
+
+        var items = data.menu.data.menu.items || [];
+
+        data.hasMenuItems = items.length &gt; 0;
+
+        for (var i = 0; i &lt; items.length; i++) {
+
+            var item = items[i];
+
+            if (item.type == 'page' &amp;&amp;
+                item.sp_page == data.login_page) {
+
+                data.hasLogin = true;
+            }
+        }
+    }
+
+    data.langSelector = '';
+
+    try {
+        data.langSelector = $sp.getWidget('sp-lang-selector');
+    } catch (e) {
+        gs.warn('Language selector widget unavailable: ' + e.message);
+    }
+
+    data.loginWidget = $sp.getWidgetFromInstance('login-modal');
+
+})();]]&gt;&lt;/script&gt;&lt;servicenow&gt;false&lt;/servicenow&gt;&lt;static&gt;false&lt;/static&gt;&lt;sys_class_name&gt;sp_header_footer&lt;/sys_class_name&gt;&lt;sys_created_by&gt;sumanth&lt;/sys_created_by&gt;&lt;sys_created_on&gt;2026-11-04 09:53:20&lt;/sys_created_on&gt;&lt;sys_id&gt;85a603d6c3d85710c05a33bc0501310d&lt;/sys_id&gt;&lt;sys_mod_count&gt;5&lt;/sys_mod_count&gt;&lt;sys_name&gt;file Manager&lt;/sys_name&gt;&lt;sys_package display_value="FileManager" source="x_1830514_fm"&gt;8b6210f9c3d01310c05a33bc050131b3&lt;/sys_package&gt;&lt;sys_policy/&gt;&lt;sys_scope display_value="FileManager"&gt;8b6210f9c3d01310c05a33bc050131b3&lt;/sys_scope&gt;&lt;sys_update_name&gt;sp_header_footer_85a603d6c3d85710c05a33bc0501310d&lt;/sys_update_name&gt;&lt;sys_updated_by&gt;sumanth&lt;/sys_updated_by&gt;&lt;sys_updated_on&gt;2026-11-04 10:32:06&lt;/sys_updated_on&gt;&lt;template&gt;&lt;![CDATA[
+&lt;!-- Desktop Profile Dropdown --&gt;
+&lt;li ng-if="showAvatar" class="hidden-xs hidden-sm dropdown"&gt;
+
+    &lt;a href
+       class="toggle-dropdown"
+       data-toggle="dropdown"
+       aria-expanded="false"
+       aria-label="{{::data.profileBtnMsg}}: {{::user.name}}"
+       id="profile-dropdown"
+       role="button"
+       aria-haspopup="true"&gt;
+
+        &lt;span class="navbar-avatar" aria-hidden="true"&gt;
+            &lt;sn-avatar class="avatar-small-medium"
+                       primary="avatarProfile" /&gt;
+        &lt;/span&gt;
+
+        &lt;span class="visible-lg-inline"&gt;
+            {{::user.name}}
+        &lt;/span&gt;
+    &lt;/a&gt;
+
+    &lt;ul class="dropdown-menu"
+        aria-label="{{::data.profileBtnMsg}}"&gt;
+
+        &lt;li&gt;
+            &lt;a tabindex="-1"
+               ng-href="?id=user_profile&amp;sys_id={{::user.sys_id}}"&gt;
+                ${Profile}
+            &lt;/a&gt;
+        &lt;/li&gt;
+
+        &lt;li ng-if="::!(isViewNative || isViewNativeTablet)"&gt;
+            &lt;a tabindex="-1"
+               href="{{::portal.logoutUrl}}"&gt;
+                ${Logout}
+            &lt;/a&gt;
+        &lt;/li&gt;
+
+    &lt;/ul&gt;
+&lt;/li&gt;
+
+&lt;!-- Mobile Profile --&gt;
+&lt;li ng-if="showSMAvatar"
+    class="visible-xs-block visible-sm-block"&gt;
+
+    &lt;a ng-href="?id=user_profile&amp;sys_id={{::user.sys_id}}"
+       ng-click="collapse()"&gt;
+
+        &lt;span class="navbar-avatar"&gt;
+            &lt;sn-avatar class="avatar-small-medium"
+                       primary="avatarProfile" /&gt;
+        &lt;/span&gt;
+
+        {{::user.name}}
+    &lt;/a&gt;
+&lt;/li&gt;
+
+&lt;!-- Mobile Logout --&gt;
+&lt;li ng-if="::!(isViewNative || isViewNativeTablet)"
+    class="visible-xs-block visible-sm-block"&gt;
+
+    &lt;a ng-href="{{::portal.logoutUrl}}"
+       ng-click="collapse()"&gt;
+        ${Logout}
+    &lt;/a&gt;
+&lt;/li&gt;
+]]&gt;&lt;/template&gt;&lt;/sp_header_footer&gt;&lt;/record_update&gt;</payload>
+        <payload_hash>-1932069789</payload_hash>
+        <record_name>file Manager</record_name>
+        <reverted_from/>
+        <source>6620a079c3541310c05a33bc050131dd</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-04 10:32:06</sys_created_on>
+        <sys_id>748f4f9ac31c5710c05a33bc0501314f</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1a1a61db1a00000001</sys_recorded_at>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-04 10:32:06</sys_updated_on>
+        <type>Header | Footer</type>
+        <update_guid>388fcb9aac1c5710f5c554d496933875</update_guid>
+        <update_guid_history>388fcb9aac1c5710f5c554d496933875:-1932069789,dfee4b5a3b1c5710ac287b9982e56e36:-649295126,c6eb4f92621c571053860fa40fa10613:-132398109,2d1b8352571c57102756c44f38bb1b41:-1499658759,eff9c79e2fd857104f5e9c2e09eea5ff:1290712522,45a603d63cd85710030100ed114f578d:1226267470</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete display_value="file Manager">59229b12c35c5710c05a33bc050131d5</sys_audit_delete>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-04 10:43:37</sys_created_on>
+        <sys_db_object display_value="" name="sp_header_footer">sp_header_footer</sys_db_object>
+        <sys_id>202af925c1cd4e00930f2609de4e9000</sys_id>
+        <sys_metadata>85a603d6c3d85710c05a33bc0501310d</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>file Manager</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_scope_delete display_value="">0ce7e5c8e51849d4822871c8bb2d3d10</sys_scope_delete>
+        <sys_update_name>sp_header_footer_85a603d6c3d85710c05a33bc0501310d</sys_update_name>
+        <sys_update_version display_value="sp_header_footer_85a603d6c3d85710c05a33bc0501310d">748f4f9ac31c5710c05a33bc0501314f</sys_update_version>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-04 10:43:37</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>
