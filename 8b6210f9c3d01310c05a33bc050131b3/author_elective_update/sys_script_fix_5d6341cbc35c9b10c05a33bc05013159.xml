@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_script_fix">
+    <sys_script_fix action="DELETE">
+        <before>false</before>
+        <description/>
+        <name>Fiele Manger</name>
+        <record_for_rollback>true</record_for_rollback>
+        <script><![CDATA[(function() {
+    // Set 'filename' as display field for x_1830514_fm_file
+    var gr = new GlideRecord('sys_dictionary');
+    gr.addQuery('name', 'x_1830514_fm_file');
+    gr.addQuery('element', 'filename');
+    gr.query();
+    if (gr.next()) {
+        gr.setValue('display', true);
+        gr.update();
+        gs.print('SUCCESS: filename is now the display field for x_1830514_fm_file');
+    } else {
+        gs.print('ERROR: Could not find filename column on x_1830514_fm_file');
+    }
+
+    // Set 'folder_name' as display field for x_1830514_fm_folder
+    var gr2 = new GlideRecord('sys_dictionary');
+    gr2.addQuery('name', 'x_1830514_fm_folder');
+    gr2.addQuery('element', 'folder_name');
+    gr2.query();
+    if (gr2.next()) {
+        gr2.setValue('display', true);
+        gr2.update();
+        gs.print('SUCCESS: folder_name is now the display field for x_1830514_fm_folder');
+    } else {
+        gs.print('ERROR: Could not find folder_name column on x_1830514_fm_folder');
+    }
+})();]]></script>
+        <sys_class_name>sys_script_fix</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-06 08:16:03</sys_created_on>
+        <sys_id>5d6341cbc35c9b10c05a33bc05013159</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Fiele Manger</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sys_script_fix_5d6341cbc35c9b10c05a33bc05013159</sys_update_name>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-06 08:16:03</sys_updated_on>
+        <unloadable>false</unloadable>
+    </sys_script_fix>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</application>
+        <file_path/>
+        <instance_id>e3a722061b2275d01024eb9b2d4bcb3f</instance_id>
+        <instance_name>dev215720</instance_name>
+        <name>sys_script_fix_5d6341cbc35c9b10c05a33bc05013159</name>
+        <payload>&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;record_update table="sys_script_fix"&gt;&lt;sys_script_fix action="INSERT_OR_UPDATE"&gt;&lt;before&gt;false&lt;/before&gt;&lt;description/&gt;&lt;name&gt;Fiele Manger&lt;/name&gt;&lt;record_for_rollback&gt;true&lt;/record_for_rollback&gt;&lt;script&gt;&lt;![CDATA[(function() {
+    // Set 'filename' as display field for x_1830514_fm_file
+    var gr = new GlideRecord('sys_dictionary');
+    gr.addQuery('name', 'x_1830514_fm_file');
+    gr.addQuery('element', 'filename');
+    gr.query();
+    if (gr.next()) {
+        gr.setValue('display', true);
+        gr.update();
+        gs.print('SUCCESS: filename is now the display field for x_1830514_fm_file');
+    } else {
+        gs.print('ERROR: Could not find filename column on x_1830514_fm_file');
+    }
+
+    // Set 'folder_name' as display field for x_1830514_fm_folder
+    var gr2 = new GlideRecord('sys_dictionary');
+    gr2.addQuery('name', 'x_1830514_fm_folder');
+    gr2.addQuery('element', 'folder_name');
+    gr2.query();
+    if (gr2.next()) {
+        gr2.setValue('display', true);
+        gr2.update();
+        gs.print('SUCCESS: folder_name is now the display field for x_1830514_fm_folder');
+    } else {
+        gs.print('ERROR: Could not find folder_name column on x_1830514_fm_folder');
+    }
+})();]]&gt;&lt;/script&gt;&lt;sys_class_name&gt;sys_script_fix&lt;/sys_class_name&gt;&lt;sys_created_by&gt;sumanth&lt;/sys_created_by&gt;&lt;sys_created_on&gt;2026-11-06 08:16:03&lt;/sys_created_on&gt;&lt;sys_id&gt;5d6341cbc35c9b10c05a33bc05013159&lt;/sys_id&gt;&lt;sys_mod_count&gt;0&lt;/sys_mod_count&gt;&lt;sys_name&gt;Fiele Manger&lt;/sys_name&gt;&lt;sys_package display_value="FileManager" source="x_1830514_fm"&gt;8b6210f9c3d01310c05a33bc050131b3&lt;/sys_package&gt;&lt;sys_policy/&gt;&lt;sys_scope display_value="FileManager"&gt;8b6210f9c3d01310c05a33bc050131b3&lt;/sys_scope&gt;&lt;sys_update_name&gt;sys_script_fix_5d6341cbc35c9b10c05a33bc05013159&lt;/sys_update_name&gt;&lt;sys_updated_by&gt;sumanth&lt;/sys_updated_by&gt;&lt;sys_updated_on&gt;2026-11-06 08:16:03&lt;/sys_updated_on&gt;&lt;unloadable&gt;false&lt;/unloadable&gt;&lt;/sys_script_fix&gt;&lt;/record_update&gt;</payload>
+        <payload_hash>1965412623</payload_hash>
+        <record_name>Fiele Manger</record_name>
+        <reverted_from/>
+        <source>13c664cbc3d09b10c05a33bc050131f3</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-06 08:16:03</sys_created_on>
+        <sys_id>d383c5cbc35c9b10c05a33bc0501310a</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1a1afeddcbe0000001</sys_recorded_at>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-06 08:16:03</sys_updated_on>
+        <type>Fix Script</type>
+        <update_guid>9383c5cb4e5c9b1081355805325edb09</update_guid>
+        <update_guid_history>9383c5cb4e5c9b1081355805325edb09:1965412623</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-06 08:17:38</sys_created_on>
+        <sys_db_object display_value="" name="sys_script_fix">sys_script_fix</sys_db_object>
+        <sys_id>2ef542d26ee94d38b36b180cdba3e124</sys_id>
+        <sys_metadata>5d6341cbc35c9b10c05a33bc05013159</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Fiele Manger</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_scope_delete display_value="">0ce7e5c8e51849d4822871c8bb2d3d10</sys_scope_delete>
+        <sys_update_name>sys_script_fix_5d6341cbc35c9b10c05a33bc05013159</sys_update_name>
+        <sys_update_version display_value="sys_script_fix_5d6341cbc35c9b10c05a33bc05013159">d383c5cbc35c9b10c05a33bc0501310a</sys_update_version>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-06 08:17:38</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>
