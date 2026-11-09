@@ -466,6 +466,65 @@ api.controller = function ($scope, $http, $timeout) {
         uploadNext();
     }
 
+/* ===================================================
+   FOLDER UPLOAD
+=================================================== */
+
+c.openFolderUploadPicker = function () {
+    c.triggerFolderUpload();
+};
+
+c.triggerFolderUpload = function () {
+    var input = document.getElementById('fmFolderUpload');
+
+    if (input) {
+        input.value = '';
+        input.click();
+    } else {
+        c.error = 'Folder upload input was not found.';
+    }
+};
+
+c.onFolderUploadSelected = function (input) {
+    var files = input && input.files;
+
+    if (!files || !files.length) {
+        return;
+    }
+
+    var folderName = '';
+
+    if (files[0].webkitRelativePath) {
+        folderName = files[0].webkitRelativePath.split('/')[0];
+    }
+
+    if (!folderName) {
+        c.error = 'Unable to identify the selected folder.';
+        input.value = '';
+        return;
+    }
+
+    // Create the selected folder in ServiceNow
+    c.runAction('create_folder', {
+        folder_name: folderName,
+        description: 'Uploaded folder',
+        parent_folder: c.currentFolder || ''
+    }).then(function (result) {
+
+        if (result.error || !result.folder_sys_id) {
+            c.error = result.error || 'Unable to create folder.';
+            input.value = '';
+            return;
+        }
+
+        // Upload selected files into the created folder
+        _uploadFilesToFolder(files, result.folder_sys_id);
+
+        input.value = '';
+
+    });
+};
+
     /* ===================================================
        CREATE & RENAME FOLDER
     =================================================== */
@@ -1252,6 +1311,124 @@ api.link = function ($scope, element) {
 
 .fm-sidebar-footer i {
     color: #3478df;
+}
+
+/* NEW BUTTON IN SIDEBAR */
+
+.fm-sidebar-new {
+  display: block;
+  margin: 18px 15px 20px;
+  width: auto;
+}
+
+.fm-sidebar-new .fm-new-btn {
+  width: 100%;
+  height: 40px;
+  justify-content: center;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.fm-sidebar-dropdown {
+  width: 100%;
+  top: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  box-sizing: border-box;
+  z-index: 9999;
+}
+/* NEW DROPDOWN MENU */
+.fm-new-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 230px;
+    background: #ffffff;
+    border: 1px solid #e1e7ef;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    padding: 6px;
+    z-index: 9999;
+}
+
+/* DROPDOWN OPTION */
+.fm-new-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* HOVER EFFECT */
+.fm-new-option:hover {
+    background: #f0f5ff;
+}
+
+/* OPTION ICON */
+.fm-new-option &gt; i {
+    width: 22px;
+    min-width: 22px;
+    font-size: 19px;
+    color: #3478df;
+    text-align: center;
+}
+
+/* TEXT CONTAINER */
+.fm-new-option span {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* OPTION TITLE */
+.fm-new-option strong {
+    font-size: 13px;
+    font-weight: 600;
+    color: #344256;
+}
+
+/* OPTION DESCRIPTION */
+.fm-new-option small {
+    font-size: 11px;
+    font-weight: 400;
+    color: #8995a5;
+    line-height: 15px;
+}
+
+/* SIDEBAR DROPDOWN POSITION */
+.fm-sidebar-new {
+    position: relative;
+    margin: 18px 15px 20px;
+}
+
+.fm-sidebar-dropdown {
+    width: 100%;
+    left: 0;
+    right: auto;
+    box-sizing: border-box;
+}
+
+/* DROPDOWN OPTION SEPARATOR */
+.fm-new-option + .fm-new-option {
+    border-top: 1px solid #f0f2f5;
+    border-radius: 0 0 6px 6px;
+}
+
+/* NEW BUTTON */
+.fm-new-btn {
+    width: 100%;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 9px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
 }
 
 /* =========================================
@@ -3398,15 +3575,40 @@ api.link = function ($scope, element) {
     }
 
     function deleteFolderPermanent() {
-        var folder = getRecord(FOLDER_TABLE, input.sys_id);
-        if (!folder || !canOwnFolder(folder) || !isDeleted(folder)) {
-            data.error = 'You cannot permanently delete this folder.';
-            return;
-        }
+    var folder = getRecord(FOLDER_TABLE, input.sys_id);
 
-        folder.deleteRecord();
-        data.success = 'Folder permanently deleted.';
+    if (!folder || !canOwnFolder(folder) || !isDeleted(folder)) {
+        data.error = 'You cannot permanently delete this folder.';
+        return;
     }
+
+    var folderId = folder.getUniqueValue();
+
+    // Check for child folders
+    var childFolders = new GlideRecord(FOLDER_TABLE);
+    childFolders.addQuery('parent_folder', folderId);
+    childFolders.setLimit(1);
+    childFolders.query();
+
+    if (childFolders.hasNext()) {
+        data.error = 'Cannot delete this folder because subfolders still exist.';
+        return;
+    }
+
+    // Check for files
+    var files = new GlideRecord(FILE_TABLE);
+    files.addQuery('folder', folderId);
+    files.setLimit(1);
+    files.query();
+
+    if (files.hasNext()) {
+        data.error = 'Cannot delete this folder because files still exist.';
+        return;
+    }
+
+    folder.deleteRecord();
+    data.success = 'Folder permanently deleted.';
+}
 
     /* ==================================================
        SHARE FILE OR FOLDER
@@ -3745,88 +3947,169 @@ api.link = function ($scope, element) {
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-04 11:15:08</sys_created_on>
         <sys_id>53595bdec35c5710c05a33bc0501312a</sys_id>
-        <sys_mod_count>20</sys_mod_count>
+        <sys_mod_count>51</sys_mod_count>
         <sys_name>File home</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sp_widget_53595bdec35c5710c05a33bc0501312a</sys_update_name>
-        <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-06 08:09:18</sys_updated_on>
+        <sys_updated_by>admin</sys_updated_by>
+        <sys_updated_on>2026-11-09 08:43:54</sys_updated_on>
         <template><![CDATA[<div class="fm-app" ng-keydown="c.onKeyDown($event)" ng-click="c.closeContextMenu()">
 
   <!-- =========================================
        SIDEBAR
   ========================================= -->
-  <aside class="fm-sidebar">
+  
 
-    <div class="fm-logo" ng-click="c.goHome()">
-      <div class="fm-logo-icon">
-        <i class="fa fa-folder-open"></i>
-      </div>
-      <span>My Files</span>
+<!-- SIDEBAR -->
+<aside class="fm-sidebar">
+
+  <!-- LOGO -->
+  <div class="fm-logo" ng-click="c.goHome()">
+    <div class="fm-logo-icon">
+      <i class="fa fa-folder-open"></i>
     </div>
+    <span>My Files</span>
+  </div>
 
-    <div class="fm-menu">
+  <!-- NEW BUTTON -->
+  <div class="fm-new-wrapper fm-sidebar-new">
 
-      <div class="fm-menu-label">WORKSPACE</div>
+    <button type="button"
+            class="fm-button fm-primary fm-new-btn"
+            ng-click="c.showNewMenu = !c.showNewMenu; $event.stopPropagation()">
 
-      <a ng-class="{'active': c.view == 'home'}"
-         ng-click="c.goHome()">
-        <i class="fa fa-home"></i>
-        <span>Home</span>
-      </a>
+      <i class="fa fa-plus"></i>
+      <span>New</span>
+      <i class="fa fa-angle-down"></i>
 
-      <!-- ALL FILES (NEW) -->
-      <a ng-class="{'active': c.view == 'allfiles'}"
-         ng-click="c.setView('allfiles')">
-        <i class="fa fa-files-o"></i>
-        <span>All Files</span>
-        <span class="fm-count-pill" ng-if="c.data.files.length">{{c.data.files.length}}</span>
-      </a>
+    </button>
 
-      <a ng-class="{'active': c.view == 'folders' || c.view == 'files'}"
-         ng-click="c.setView('folders')">
+    <!-- SINGLE FOLDER UPLOAD INPUT -->
+    <input type="file"
+           id="fmFolderUpload"
+           webkitdirectory
+           directory
+           multiple
+           style="display:none"
+           onchange="angular.element(this).scope().c.onFolderUploadSelected(this)">
+
+    <!-- NEW DROPDOWN -->
+    <div class="fm-new-dropdown fm-sidebar-dropdown"
+         ng-if="c.showNewMenu"
+         ng-click="$event.stopPropagation()">
+
+      <!-- NEW FOLDER -->
+      <div class="fm-new-option"
+           ng-click="c.showNewMenu = false; c.openFolderModal()">
+
         <i class="fa fa-folder"></i>
-        <span>Folders</span>
-        <span class="fm-count-pill" ng-if="c.data.folders.length">{{c.data.folders.length}}</span>
-      </a>
 
-      <a ng-class="{'active': c.view == 'shared'}"
-         ng-click="c.setView('shared')">
-        <i class="fa fa-users"></i>
-        <span>Shared with Me</span>
-        <span class="fm-count-pill" ng-if="(c.data.sharedFiles.length + c.data.sharedFolders.length)">
-          {{c.data.sharedFiles.length + c.data.sharedFolders.length}}
+        <span>
+          <strong>New Folder</strong>
+          <small>Create a new folder</small>
         </span>
-      </a>
 
-      <div class="fm-menu-label fm-menu-spaced">MANAGE</div>
+      </div>
 
-      <a ng-class="{'active': c.view == 'recycle'}"
-         ng-click="c.setView('recycle')">
-        <i class="fa fa-trash"></i>
-        <span>Recycle Bin</span>
-        <span class="fm-badge"
-              ng-if="(c.data.recycleFiles.length + c.data.recycleFolders.length) > 0">
-          {{c.data.recycleFiles.length + c.data.recycleFolders.length}}
+      <!-- UPLOAD FOLDER -->
+      <div class="fm-new-option"
+           ng-click="c.showNewMenu = false; c.triggerFolderUpload()">
+
+        <i class="fa fa-folder-open"></i>
+
+        <span>
+          <strong>Upload Folder</strong>
+          <small>Select a folder from your computer</small>
         </span>
-      </a>
 
-      <a ng-class="{'active': c.view == 'storage'}"
-         ng-click="c.setView('storage')">
-        <i class="fa fa-database"></i>
-        <span>Storage</span>
-      </a>
+      </div>
+
+      <!-- NEW FILE -->
+      <div class="fm-new-option"
+           ng-click="c.showNewMenu = false; c.openUploadFolderPicker()">
+
+        <i class="fa fa-file"></i>
+
+        <span>
+          <strong>New File</strong>
+          <small>Select destination and upload files</small>
+        </span>
+
+      </div>
 
     </div>
+  </div>
 
-    <div class="fm-sidebar-footer">
-      <i class="fa fa-cloud"></i>
-      <span>File Manager</span>
-    </div>
+  <!-- WORKSPACE MENU -->
+  <div class="fm-menu">
 
-  </aside>
+    <div class="fm-menu-label">WORKSPACE</div>
+
+    <a ng-class="{'active': c.view == 'home'}"
+       ng-click="c.goHome()">
+      <i class="fa fa-home"></i>
+      <span>Home</span>
+    </a>
+
+    <a ng-class="{'active': c.view == 'allfiles'}"
+       ng-click="c.setView('allfiles')">
+      <i class="fa fa-files-o"></i>
+      <span>All Files</span>
+      <span class="fm-count-pill" ng-if="c.data.files.length">
+        {{c.data.files.length}}
+      </span>
+    </a>
+
+    <a ng-class="{'active': c.view == 'folders' || c.view == 'files'}"
+       ng-click="c.setView('folders')">
+      <i class="fa fa-folder"></i>
+      <span>Folders</span>
+      <span class="fm-count-pill" ng-if="c.data.folders.length">
+        {{c.data.folders.length}}
+      </span>
+    </a>
+
+    <a ng-class="{'active': c.view == 'shared'}"
+       ng-click="c.setView('shared')">
+      <i class="fa fa-users"></i>
+      <span>Shared with Me</span>
+      <span class="fm-count-pill"
+            ng-if="c.data.sharedFiles.length + c.data.sharedFolders.length">
+        {{c.data.sharedFiles.length + c.data.sharedFolders.length}}
+      </span>
+    </a>
+
+    <div class="fm-menu-label fm-menu-spaced">MANAGE</div>
+
+    <a ng-class="{'active': c.view == 'recycle'}"
+       ng-click="c.setView('recycle')">
+      <i class="fa fa-trash"></i>
+      <span>Recycle Bin</span>
+      <span class="fm-badge"
+            ng-if="c.data.recycleFiles.length + c.data.recycleFolders.length > 0">
+        {{c.data.recycleFiles.length + c.data.recycleFolders.length}}
+      </span>
+    </a>
+
+    <a ng-class="{'active': c.view == 'storage'}"
+       ng-click="c.setView('storage')">
+      <i class="fa fa-database"></i>
+      <span>Storage</span>
+    </a>
+
+  </div>
+
+  <!-- SIDEBAR FOOTER -->
+  <div class="fm-sidebar-footer">
+    <i class="fa fa-cloud"></i>
+    <span>File Manager</span>
+  </div>
+
+</aside>
+
+
 
   <!-- =========================================
        MAIN CONTENT
@@ -4291,7 +4574,7 @@ api.link = function ($scope, element) {
         </div>
       </div>
 
-      <!-- Drag & Drop Zone (Drag files or Click to Upload) -->
+      <!-- Drag & Drop Zone (Drag files or Click to Upload) 
       <label class="fm-drop-zone"
              ng-if="c.currentFolderCanEdit()"
              ng-class="{'fm-drag-over': c.dragOver, 'fm-disabled': c.uploading}"
@@ -4304,7 +4587,7 @@ api.link = function ($scope, element) {
                style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;"
                ng-disabled="c.uploading"
                onchange="angular.element(this).scope().c.onDirectFilesSelected(this)">
-      </label>
+      </label>-->
 
       <!-- Upload Progress -->
       <div class="fm-upload-progress" ng-if="c.uploading">

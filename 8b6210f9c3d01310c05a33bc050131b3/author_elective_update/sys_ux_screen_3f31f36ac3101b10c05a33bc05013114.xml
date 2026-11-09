@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_ux_screen">
+    <sys_ux_screen action="DELETE">
+        <active>true</active>
+        <app_config display_value="Guided Tours">00e8f3f3a3110210e99167b0c51e6121</app_config>
+        <description/>
+        <disable_auto_reflow>false</disable_auto_reflow>
+        <disable_interoperable>false</disable_interoperable>
+        <event_mappings>[]</event_mappings>
+        <macroponent display_value="New default">7331ff2ac3101b10c05a33bc050131d9</macroponent>
+        <macroponent_config/>
+        <name>New default copy</name>
+        <order>0</order>
+        <parent_macroponent display_value="UXR Base Experience Shell">76a83a645b122010b913030a1d81c780</parent_macroponent>
+        <required_translations>[ ]</required_translations>
+        <rollback_screen/>
+        <screen_condition/>
+        <screen_type display_value="Blank page">cf7b3b37a3110210e99167b0c51e6114</screen_type>
+        <sys_class_name>sys_ux_screen</sys_class_name>
+        <sys_created_by>Siva</sys_created_by>
+        <sys_created_on>2026-11-05 07:37:58</sys_created_on>
+        <sys_domain>global</sys_domain>
+        <sys_domain_path>/</sys_domain_path>
+        <sys_id>3f31f36ac3101b10c05a33bc05013114</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>New default copy</sys_name>
+        <sys_overrides/>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sys_ux_screen_3f31f36ac3101b10c05a33bc05013114</sys_update_name>
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-05 07:37:58</sys_updated_on>
+    </sys_ux_screen>
+    <sys_translated_text action="DELETE" query="documentkey=3f31f36ac3101b10c05a33bc05013114"/>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</application>
+        <file_path/>
+        <instance_id>e3a722061b2275d01024eb9b2d4bcb3f</instance_id>
+        <instance_name>dev215720</instance_name>
+        <name>sys_ux_screen_3f31f36ac3101b10c05a33bc05013114</name>
+        <payload><![CDATA[<?xml version="1.0" encoding="UTF-8"?><record_update sys_domain="global" table="sys_ux_screen"><sys_ux_screen action="INSERT_OR_UPDATE"><active>true</active><app_config display_value="Guided Tours">00e8f3f3a3110210e99167b0c51e6121</app_config><description/><disable_auto_reflow>false</disable_auto_reflow><disable_interoperable>false</disable_interoperable><event_mappings>[]</event_mappings><macroponent display_value="New default">7331ff2ac3101b10c05a33bc050131d9</macroponent><macroponent_config/><name>New default copy</name><order>0</order><parent_macroponent display_value="UXR Base Experience Shell">76a83a645b122010b913030a1d81c780</parent_macroponent><required_translations>[ ]</required_translations><rollback_screen/><screen_condition/><screen_type display_value="Blank page">cf7b3b37a3110210e99167b0c51e6114</screen_type><sys_class_name>sys_ux_screen</sys_class_name><sys_created_by>Siva</sys_created_by><sys_created_on>2026-11-05 07:37:58</sys_created_on><sys_domain>global</sys_domain><sys_domain_path>/</sys_domain_path><sys_id>3f31f36ac3101b10c05a33bc05013114</sys_id><sys_mod_count>0</sys_mod_count><sys_name>New default copy</sys_name><sys_overrides/><sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package><sys_policy/><sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope><sys_update_name>sys_ux_screen_3f31f36ac3101b10c05a33bc05013114</sys_update_name><sys_updated_by>Siva</sys_updated_by><sys_updated_on>2026-11-05 07:37:58</sys_updated_on></sys_ux_screen><sys_translated_text action="delete_multiple" query="documentkey=3f31f36ac3101b10c05a33bc05013114"/></record_update>]]></payload>
+        <payload_hash>-281093101</payload_hash>
+        <record_name>New default copy</record_name>
+        <reverted_from/>
+        <source>58598f1ec3d85710c05a33bc0501316d</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>Siva</sys_created_by>
+        <sys_created_on>2026-11-05 07:37:58</sys_created_on>
+        <sys_id>ff31f36ac3101b10c05a33bc05013119</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1a1aaa4a2e00000001</sys_recorded_at>
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-05 07:37:58</sys_updated_on>
+        <type>UX Screen</type>
+        <update_guid>bf31f36a01101b10d022f8dc36d21818</update_guid>
+        <update_guid_history>bf31f36a01101b10d022f8dc36d21818:-281093101</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete/>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>Siva</sys_created_by>
+        <sys_created_on>2026-11-05 07:38:58</sys_created_on>
+        <sys_db_object display_value="" name="sys_ux_screen">sys_ux_screen</sys_db_object>
+        <sys_id>371ef3b027b74b708bafc51bdb825900</sys_id>
+        <sys_metadata>3f31f36ac3101b10c05a33bc05013114</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>New default copy</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_scope_delete display_value="">0ce7e5c8e51849d4822871c8bb2d3d10</sys_scope_delete>
+        <sys_update_name>sys_ux_screen_3f31f36ac3101b10c05a33bc05013114</sys_update_name>
+        <sys_update_version display_value="sys_ux_screen_3f31f36ac3101b10c05a33bc05013114">ff31f36ac3101b10c05a33bc05013119</sys_update_version>
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-05 07:38:58</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>

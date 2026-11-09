@@ -120,6 +120,41 @@
                 "type": "EVENT"
             }
         ]
+    },
+    {
+        "eventMappingId": "mHtKNPejAUdijjuiiJDwgKDJIhh",
+        "isConfiguration": null,
+        "offRowStorageId": null,
+        "sourceEventApiName": "x_1830514_fm.LOOK_UP_USER_PREFERENCES_1_REFRESH_RELAY_d9dd335ac3909710c05a33bc050131cd",
+        "sourceEventCorrelationId": null,
+        "sourceEventDefinition": {
+            "apiName": "x_1830514_fm.LOOK_UP_USER_PREFERENCES_1_REFRESH_RELAY_d9dd335ac3909710c05a33bc050131cd",
+            "id": null,
+            "type": "UXEVENT"
+        },
+        "sourceEventSysId": null,
+        "targets": [
+            {
+                "broker": null,
+                "clientScript": null,
+                "clientTransformScript": null,
+                "clientTransformScriptUxValue": null,
+                "conditional": null,
+                "declarativeAction": null,
+                "event": null,
+                "operation": {
+                    "dataBrokerId": "83114bc453231010c495ddeeff7b12d9",
+                    "operationName": "REFRESH",
+                    "parentResourceId": "look_up_user_preferences_1",
+                    "payload": {
+                        "type": "JSON_LITERAL",
+                        "value": {}
+                    }
+                },
+                "targetId": "cofggqvgZBaaxJeeddHsHeeddJDeehhPIbbh",
+                "type": "DATABROKER_OP"
+            }
+        ]
     }
 ]</event_mappings>
         <macroponent display_value="Home default">d9dd335ac3909710c05a33bc050131cd</macroponent>
@@ -166,7 +201,7 @@
         <sys_domain>global</sys_domain>
         <sys_domain_path>/</sys_domain_path>
         <sys_id>d9dd335ac3909710c05a33bc050131d8</sys_id>
-        <sys_mod_count>18</sys_mod_count>
+        <sys_mod_count>30</sys_mod_count>
         <sys_name>Home default</sys_name>
         <sys_overrides/>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
@@ -174,7 +209,7 @@
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_ux_screen_d9dd335ac3909710c05a33bc050131d8</sys_update_name>
         <sys_updated_by>Siva</sys_updated_by>
-        <sys_updated_on>2026-11-04 15:42:50</sys_updated_on>
+        <sys_updated_on>2026-11-05 12:18:32</sys_updated_on>
     </sys_ux_screen>
     <sys_translated_text action="delete_multiple" query="documentkey=d9dd335ac3909710c05a33bc050131d8"/>
 </record_update>

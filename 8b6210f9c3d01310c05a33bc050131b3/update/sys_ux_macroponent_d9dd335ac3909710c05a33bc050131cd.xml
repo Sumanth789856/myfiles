@@ -973,13 +973,13 @@
                                 "elementLabel": "Input 1",
                                 "eventMappings": [
                                     {
-                                        "eventMappingId": "qVggddteehhhheeddBaaoYjjqIAhhsnLMeeCh",
+                                        "eventMappingId": "jXWgaeehhrqBkmQjjpIAAZwTGZBM",
                                         "isConfiguration": false,
                                         "offRowStorageId": null,
-                                        "sourceEventApiName": "sn_input.NOW_INPUT#VALUE_SET",
+                                        "sourceEventApiName": "sn_input.NOW_INPUT#INPUT",
                                         "sourceEventCorrelationId": null,
                                         "sourceEventDefinition": {
-                                            "apiName": "sn_input.NOW_INPUT#VALUE_SET",
+                                            "apiName": "sn_input.NOW_INPUT#INPUT",
                                             "id": null,
                                             "type": "UXEVENT"
                                         },
@@ -1002,7 +1002,7 @@
                                                             "value": {
                                                                 "binding": {
                                                                     "address": [
-                                                                        "value"
+                                                                        "fieldValue"
                                                                     ]
                                                                 },
                                                                 "type": "EVENT_PAYLOAD_BINDING"
@@ -1012,8 +1012,9 @@
                                                     },
                                                     "sysId": "32408b42ff7a10109046e490703bf176"
                                                 },
+                                                "interaction": null,
                                                 "operation": null,
-                                                "targetId": "zbjjOdPKlCkggReeddNaaFeeddzTaapaaYK",
+                                                "targetId": "aaccokefQOAkzveeddAiiHaaypThhUHk",
                                                 "type": "EVENT"
                                             }
                                         ]
@@ -1657,7 +1658,7 @@
         "elementLabel": "Create Record 1",
         "eventMappings": [
             {
-                "eventMappingId": "ugKeehhDPeehhjjCExddeeddHAIlaacDffpcy",
+                "eventMappingId": "wbbPqhfJnBUffaeeddHwGeeddBccGgZjjH",
                 "isConfiguration": false,
                 "offRowStorageId": null,
                 "sourceEventApiName": "sn_uxf.DATA_OP_SUCCEEDED",
@@ -1675,51 +1676,97 @@
                         "clientTransformScript": "",
                         "conditional": null,
                         "declarativeAction": null,
-                        "event": null,
-                        "operation": {
-                            "dataBrokerId": "beda4252770300108d070d74c810618f",
-                            "operationName": "EXECUTE",
-                            "parentResourceId": "create_record_1",
+                        "event": {
+                            "apiName": "sn_uxf_page.NOW_UXF_PAGE#ADD_NOTIFICATIONS",
                             "payload": {
                                 "container": {
-                                    "table": {
-                                        "type": "JSON_LITERAL",
-                                        "value": "x_1830514_fm_folder"
-                                    },
-                                    "templateFields": {
-                                        "binding": {
-                                            "address": [
-                                                "operation"
-                                            ]
-                                        },
-                                        "type": "EVENT_PAYLOAD_BINDING"
-                                    },
-                                    "useSetDisplayValue": {
-                                        "type": "JSON_LITERAL",
-                                        "value": null
+                                    "items": {
+                                        "container": [
+                                            {
+                                                "container": {
+                                                    "action": {
+                                                        "container": {
+                                                            "type": {
+                                                                "type": "JSON_LITERAL",
+                                                                "value": "dismiss"
+                                                            }
+                                                        },
+                                                        "type": "MAP_CONTAINER"
+                                                    },
+                                                    "content": {
+                                                        "type": "TRANSLATION_LITERAL",
+                                                        "value": {
+                                                            "code": null,
+                                                            "comment": "",
+                                                            "message": "Folder created successfully!"
+                                                        }
+                                                    },
+                                                    "header": {
+                                                        "type": "TRANSLATION_LITERAL",
+                                                        "value": {
+                                                            "code": null,
+                                                            "comment": "",
+                                                            "message": ""
+                                                        }
+                                                    },
+                                                    "icon": {
+                                                        "type": "JSON_LITERAL",
+                                                        "value": ""
+                                                    },
+                                                    "id": {
+                                                        "type": "JSON_LITERAL",
+                                                        "value": "Success"
+                                                    },
+                                                    "status": {
+                                                        "type": "JSON_LITERAL",
+                                                        "value": "info"
+                                                    }
+                                                },
+                                                "type": "MAP_CONTAINER"
+                                            }
+                                        ],
+                                        "type": "LIST_CONTAINER"
                                     }
                                 },
                                 "type": "MAP_CONTAINER"
-                            }
+                            },
+                            "sysId": "49fe7d575f983bb3f8eea3fa8d40694c"
                         },
-                        "targetId": "fihibffpDkujeeddMkMIXtaHLgr",
-                        "type": "DATABROKER_OP"
-                    }
-                ]
-            },
-            {
-                "eventMappingId": "zOaaxPPthhCEjteeddCwCseeggnLUhhX",
-                "isConfiguration": false,
-                "offRowStorageId": null,
-                "sourceEventApiName": "sn_uxf.DATA_OP_INITIATED",
-                "sourceEventCorrelationId": null,
-                "sourceEventDefinition": {
-                    "apiName": "sn_uxf.DATA_OP_INITIATED",
-                    "id": null,
-                    "type": "UXEVENT"
-                },
-                "sourceEventSysId": null,
-                "targets": [
+                        "interaction": null,
+                        "operation": null,
+                        "targetId": "zqTdovOdBUdAeeddJMNybJnBvAee",
+                        "type": "EVENT"
+                    },
+                    {
+                        "broker": null,
+                        "clientScript": null,
+                        "clientTransformScript": "",
+                        "conditional": null,
+                        "declarativeAction": null,
+                        "event": {
+                            "apiName": "x_1830514_fm.MODAL_SELECTED_RELAY_d9dd335ac3909710c05a33bc050131cd",
+                            "payload": {
+                                "type": "JSON_LITERAL",
+                                "value": {
+                                    "bare": false,
+                                    "displayOptions": null,
+                                    "headerLabel": null,
+                                    "modalId": "[component-id$='custom_1']",
+                                    "preserveState": false,
+                                    "showModal": false,
+                                    "viewportElementId": null,
+                                    "viewportFields": null,
+                                    "viewportParams": null,
+                                    "viewportRoute": null
+                                }
+                            },
+                            "sysId": "f1024062c3d09710c05a33bc050131a5"
+                        },
+                        "interaction": null,
+                        "operation": null,
+                        "targetId": "naamqTeehhORAUeehhQjjYEItNjjEReePr",
+                        "type": "EVENT"
+                    },
                     {
                         "broker": null,
                         "clientScript": null,
@@ -1729,26 +1776,36 @@
                         "event": {
                             "apiName": "sn_uxf.MACROPONENT_STATE_UPDATE_REQUESTED",
                             "payload": {
-                                "container": {
-                                    "propName": {
-                                        "type": "JSON_LITERAL",
-                                        "value": "folder_name"
-                                    },
-                                    "value": {
-                                        "binding": {
-                                            "address": [
-                                                "folder_name"
-                                            ]
-                                        },
-                                        "type": "STATE_BINDING"
-                                    }
-                                },
-                                "type": "MAP_CONTAINER"
+                                "type": "JSON_LITERAL",
+                                "value": {
+                                    "propName": "folder_name",
+                                    "value": null
+                                }
                             },
                             "sysId": "32408b42ff7a10109046e490703bf176"
                         },
+                        "interaction": null,
                         "operation": null,
-                        "targetId": "gtLOnfpHDaabpjjVoDsccLuVFCd",
+                        "targetId": "rwaaMIvmJCaalccjjxaaHcwbaaeeZehh",
+                        "type": "EVENT"
+                    },
+                    {
+                        "broker": null,
+                        "clientScript": null,
+                        "clientTransformScript": "",
+                        "conditional": null,
+                        "declarativeAction": null,
+                        "event": {
+                            "apiName": "x_1830514_fm.LOOK_UP_USER_PREFERENCES_1_REFRESH_RELAY_d9dd335ac3909710c05a33bc050131cd",
+                            "payload": {
+                                "type": "JSON_LITERAL",
+                                "value": {}
+                            },
+                            "sysId": "3b669876c3181b10c05a33bc05013102"
+                        },
+                        "interaction": null,
+                        "operation": null,
+                        "targetId": "TOggKsveehhVBENIjjgQGiiRMGxOoY",
                         "type": "EVENT"
                     }
                 ]
@@ -1773,7 +1830,7 @@
 ]</data>
         <description/>
         <disable_auto_reflow>false</disable_auto_reflow>
-        <dispatched_events>f1024062c3d09710c05a33bc050131a5</dispatched_events>
+        <dispatched_events>f1024062c3d09710c05a33bc050131a5,3b669876c3181b10c05a33bc05013102</dispatched_events>
         <ext_controller_dep/>
         <extends display_value="Page Template">19be392623033300f4b4c50947bf65ba</extends>
         <extension_point/>
@@ -1858,6 +1915,10 @@
   "code" : "",
   "comment" : ""
 }, {
+  "message" : "Folder created successfully!",
+  "code" : "",
+  "comment" : ""
+}, {
   "message" : "IT Support",
   "code" : "",
   "comment" : ""
@@ -1910,14 +1971,14 @@
         <sys_created_by>Siva</sys_created_by>
         <sys_created_on>2026-11-04 13:54:29</sys_created_on>
         <sys_id>d9dd335ac3909710c05a33bc050131cd</sys_id>
-        <sys_mod_count>18</sys_mod_count>
+        <sys_mod_count>30</sys_mod_count>
         <sys_name>Home default</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_ux_macroponent_d9dd335ac3909710c05a33bc050131cd</sys_update_name>
         <sys_updated_by>Siva</sys_updated_by>
-        <sys_updated_on>2026-11-04 15:42:50</sys_updated_on>
+        <sys_updated_on>2026-11-05 12:18:32</sys_updated_on>
     </sys_ux_macroponent>
     <sys_translated_text action="delete_multiple" query="documentkey=d9dd335ac3909710c05a33bc050131cd"/>
 </record_update>

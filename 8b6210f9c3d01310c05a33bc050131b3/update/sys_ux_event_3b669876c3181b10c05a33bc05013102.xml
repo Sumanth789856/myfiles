@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sys_ux_event">
+    <sys_ux_event action="INSERT_OR_UPDATE">
+        <description/>
+        <event_name>LOOK_UP_USER_PREFERENCES_1_REFRESH_RELAY_d9dd335ac3909710c05a33bc050131cd</event_name>
+        <explicit_api_name/>
+        <interfaces/>
+        <label>Look Up User Preferences 1 REFRESH Relay (Home default)</label>
+        <props>[]</props>
+        <required_translations/>
+        <schema_version>1.0.0</schema_version>
+        <sys_class_name>sys_ux_event</sys_class_name>
+        <sys_created_by>Siva</sys_created_by>
+        <sys_created_on>2026-11-05 12:14:00</sys_created_on>
+        <sys_id>3b669876c3181b10c05a33bc05013102</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>Look Up User Preferences 1 REFRESH Relay (Home default)</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sys_ux_event_3b669876c3181b10c05a33bc05013102</sys_update_name>
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-05 12:14:00</sys_updated_on>
+    </sys_ux_event>
+    <sys_translated_text action="delete_multiple" query="documentkey=3b669876c3181b10c05a33bc05013102"/>
+</record_update>
