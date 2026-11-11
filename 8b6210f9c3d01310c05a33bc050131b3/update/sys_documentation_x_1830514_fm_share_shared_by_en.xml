@@ -1,24 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?><record_update>
-    <sys_documentation element="shared_by" label="shared By" language="en" table="x_1830514_fm_share">
+    <sys_documentation element="shared_by" label="Shared By" language="en" table="x_1830514_fm_share">
         <sys_documentation action="INSERT_OR_UPDATE">
             <element>shared_by</element>
             <help/>
             <hint/>
-            <label>shared By</label>
+            <label>Shared By</label>
             <language>en</language>
             <name>x_1830514_fm_share</name>
-            <plural>shared Bys</plural>
+            <plural>Shared Bys</plural>
             <sys_class_name>sys_documentation</sys_class_name>
-            <sys_created_by>sumanth</sys_created_by>
-            <sys_created_on>2026-11-02 11:52:25</sys_created_on>
+            <sys_created_by>Siva</sys_created_by>
+            <sys_created_on>2026-11-10 17:15:48</sys_created_on>
             <sys_mod_count>0</sys_mod_count>
-            <sys_name>shared By</sys_name>
+            <sys_name>Shared By</sys_name>
             <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
             <sys_policy/>
             <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
             <sys_update_name>sys_documentation_x_1830514_fm_share_shared_by_en</sys_update_name>
-            <sys_updated_by>sumanth</sys_updated_by>
-            <sys_updated_on>2026-11-02 11:52:25</sys_updated_on>
+            <sys_updated_by>Siva</sys_updated_by>
+            <sys_updated_on>2026-11-10 17:15:48</sys_updated_on>
             <url/>
             <url_target/>
         </sys_documentation>

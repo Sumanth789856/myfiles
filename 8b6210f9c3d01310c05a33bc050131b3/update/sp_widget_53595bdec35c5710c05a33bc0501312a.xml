@@ -6,7 +6,7 @@
  * ServiceNow Service Portal Widget
  */
 
-api.controller = function ($scope, $http, $timeout) {
+api.controller = function ($scope, $http, $timeout, $location) {
     var c = this;
 
     /* ===================================================
@@ -97,6 +97,82 @@ api.controller = function ($scope, $http, $timeout) {
     // Alert Messages
     c.message = '';
     c.error   = '';
+
+    /* ===================================================
+       PICKER MODE (opened from the attachment dialog)
+    =================================================== */
+    var _qs = $location.search();
+
+    c.pickerMode  = _qs.picker === 'true';
+    c.targetTable = _qs.target_table || '';
+    c.targetSysId = _qs.target_sys_id || '';
+    c.pickBusy    = false;
+
+    c.getSelectedFiles = function () {
+        var seen = {};
+        return (c.data.files || []).concat(c.data.sharedFiles || []).filter(function (f) {
+            if (!f._selected || seen[f.sys_id]) return false;
+            seen[f.sys_id] = true;
+            return true;
+        });
+    };
+
+    c.attachFiles = function (ids) {
+        if (c.pickBusy || !ids || !ids.length) return;
+
+        if (!c.targetTable || !c.targetSysId) {
+            c.error = 'Missing target record. Open this page from the attachment dialog.';
+            return;
+        }
+
+        c.pickBusy = true;
+        _clearAlerts();
+
+        c.server.get({
+            action:        'attach_to_record',
+            file_ids:      ids,
+            target_table:  c.targetTable,
+            target_sys_id: c.targetSysId
+        }).then(function (res) {
+            c.pickBusy = false;
+            var r = (res && res.data) ? res.data : res;
+
+            if (r && r.attached_count > 0) {
+                var msg = { type: 'FM_FILE_ATTACHED', count: r.attached_count };
+
+                // Notify the dialog: BroadcastChannel first, postMessage as backup
+                try {
+                    var ch = new BroadcastChannel('fm_attach_channel');
+                    ch.postMessage(msg);
+                    ch.close();
+                } catch (e) {}
+
+                try {
+                    if (window.opener) window.opener.postMessage(msg, window.location.origin);
+                } catch (e) {}
+
+                if (r.error) c.error = r.error;   // some failed: stay open and show why
+                else window.close();
+            } else {
+                c.error = (r && r.error) || 'Could not attach the selected file(s).';
+            }
+        }, function () {
+            c.pickBusy = false;
+            c.error = 'Server request failed. Please try again.';
+        });
+    };
+
+    // "Attach selected" button
+    c.attachSelected = function () {
+        var ids = c.getSelectedFiles().map(function (f) { return f.sys_id; });
+        c.attachFiles(ids);
+    };
+
+    // Double-click on a file row: attach just that file
+    c.onRowDblClick = function (file) {
+        if (!c.pickerMode || !file || !file.sys_id) return;
+        c.attachFiles([file.sys_id]);
+    };
 
     /* ===================================================
        NAVIGATION
@@ -329,7 +405,6 @@ api.controller = function ($scope, $http, $timeout) {
 
     /* ===================================================
        UPLOAD FILES WITH FOLDER PICKER MODAL
-       (Asks which folder to upload to!)
     =================================================== */
 
     c.openUploadFolderPicker = function () {
@@ -466,64 +541,64 @@ api.controller = function ($scope, $http, $timeout) {
         uploadNext();
     }
 
-/* ===================================================
-   FOLDER UPLOAD
-=================================================== */
+    /* ===================================================
+       FOLDER UPLOAD
+    =================================================== */
 
-c.openFolderUploadPicker = function () {
-    c.triggerFolderUpload();
-};
+    c.openFolderUploadPicker = function () {
+        c.triggerFolderUpload();
+    };
 
-c.triggerFolderUpload = function () {
-    var input = document.getElementById('fmFolderUpload');
+    c.triggerFolderUpload = function () {
+        var input = document.getElementById('fmFolderUpload');
 
-    if (input) {
-        input.value = '';
-        input.click();
-    } else {
-        c.error = 'Folder upload input was not found.';
-    }
-};
+        if (input) {
+            input.value = '';
+            input.click();
+        } else {
+            c.error = 'Folder upload input was not found.';
+        }
+    };
 
-c.onFolderUploadSelected = function (input) {
-    var files = input && input.files;
+    c.onFolderUploadSelected = function (input) {
+        var files = input && input.files;
 
-    if (!files || !files.length) {
-        return;
-    }
+        if (!files || !files.length) {
+            return;
+        }
 
-    var folderName = '';
+        var folderName = '';
 
-    if (files[0].webkitRelativePath) {
-        folderName = files[0].webkitRelativePath.split('/')[0];
-    }
+        if (files[0].webkitRelativePath) {
+            folderName = files[0].webkitRelativePath.split('/')[0];
+        }
 
-    if (!folderName) {
-        c.error = 'Unable to identify the selected folder.';
-        input.value = '';
-        return;
-    }
-
-    // Create the selected folder in ServiceNow
-    c.runAction('create_folder', {
-        folder_name: folderName,
-        description: 'Uploaded folder',
-        parent_folder: c.currentFolder || ''
-    }).then(function (result) {
-
-        if (result.error || !result.folder_sys_id) {
-            c.error = result.error || 'Unable to create folder.';
+        if (!folderName) {
+            c.error = 'Unable to identify the selected folder.';
             input.value = '';
             return;
         }
 
-        // Upload selected files into the created folder
-        _uploadFilesToFolder(files, result.folder_sys_id);
+        // Create the selected folder in ServiceNow
+        c.runAction('create_folder', {
+            folder_name: folderName,
+            description: 'Uploaded folder',
+            parent_folder: c.currentFolder || ''
+        }).then(function (result) {
 
-        input.value = '';
+            if (result.error || !result.folder_sys_id) {
+                c.error = result.error || 'Unable to create folder.';
+                input.value = '';
+                return;
+            }
 
-    });
-};
+            // Upload selected files into the created folder
+            _uploadFilesToFolder(files, result.folder_sys_id);
+
+            input.value = '';
+
+        });
+    };
 
     /* ===================================================
        CREATE & RENAME FOLDER
@@ -997,6 +1072,7 @@ c.onFolderUploadSelected = function (input) {
 
     c.clearSelection = function () {
         (c.data.files || []).forEach(function (f) { f._selected = false; });
+        (c.data.sharedFiles || []).forEach(function (f) { f._selected = false; });
         c.allSelected = false;
     };
 
@@ -1007,6 +1083,9 @@ c.onFolderUploadSelected = function (input) {
     c.openContextMenu = function (e, item, type) {
         e.preventDefault();
         e.stopPropagation();
+
+        // No context menu in picker mode
+        if (c.pickerMode) return;
 
         var x = e.clientX || 0;
         var y = e.clientY || 0;
@@ -1074,6 +1153,9 @@ c.onFolderUploadSelected = function (input) {
     function _clearSelection() {
         c.allSelected = false;
         (c.data && c.data.files || []).forEach(function (f) {
+            f._selected = false;
+        });
+        (c.data && c.data.sharedFiles || []).forEach(function (f) {
             f._selected = false;
         });
     }
@@ -1155,14 +1237,28 @@ api.link = function ($scope, element) {
             }
         }
     });
-};
-]]></client_script>
+};]]></client_script>
         <controller_as>c</controller_as>
         <css>/* =========================================
    FILE MANAGER — CLEAN MODERN SAAS INTERFACE
    ServiceNow Portal Widget
 ========================================= */
+/* ---- Picker mode: hide management actions ---- */
+.fm-picker .fm-sidebar-new,
+.fm-picker .fm-toolbar-actions,
+.fm-picker .fm-card-menu,
+.fm-picker .fm-context-menu,
+.fm-picker .fm-empty .fm-button,
+.fm-picker .fm-actions button[title="Share"],
+.fm-picker .fm-actions button[title="Delete"],
+.fm-picker .fm-actions button[title="Edit Description"] {
+    display: none !important;
+}
 
+.fm-picker .fm-table tbody tr {
+    cursor: pointer;
+    user-select: none;
+}
 /* --- RESET &amp; MAIN CONTAINER --- */
 .fm-app {
     display: flex;
@@ -2890,22 +2986,12 @@ api.link = function ($scope, element) {
         <script><![CDATA[(function () {
     /*
      * File Manager Widget — Server Script
-     * ServiceNow Portal Widget (Perfected)
+     * ServiceNow Portal Widget
      *
      * Tables used:
      *   x_1830514_fm_file    — File records
      *   x_1830514_fm_folder  — Folder records
      *   x_1830514_fm_share   — Share records
-     *
-     * Key improvements over original:
-     *  - try/catch wrapper around every action and data-load
-     *  - rename_folder action added
-     *  - empty_bin action added (permanent delete)
-     *  - storage.byType breakdown for new storage view
-     *  - recycleFiles/recycleFolders include deleted_date
-     *  - Shared items loaded via indexed join to avoid N+1 problem
-     *  - Consistent error message style
-     *  - Input sanitisation before every write
      */
 
     var FILE_TABLE = 'x_1830514_fm_file';
@@ -2938,6 +3024,12 @@ api.link = function ($scope, element) {
         /* ---- Search groups (early return) ---- */
         if (input && input.action === 'search_groups') {
             searchGroups();
+            return;
+        }
+
+        /* ---- Attach to target record (picker mode, early return) ---- */
+        if (input && input.action === 'attach_to_record') {
+            attachToRecord();
             return;
         }
 
@@ -3153,6 +3245,81 @@ api.link = function ($scope, element) {
             permission: permission,
             can_edit: canEdit(permission)
         });
+    }
+
+    /* ==================================================
+       ATTACH FILE(S) TO A TARGET RECORD (picker mode)
+    ================================================== */
+
+    function attachToRecord() {
+        data.attached_count = 0;
+
+        var ids         = input.file_ids || [];
+        var targetTable = (input.target_table || '').trim();
+        var targetId    = (input.target_sys_id || '').trim();
+
+        if (!ids.length || !targetTable || !targetId) {
+            data.error = 'Missing file or target record details.';
+            return;
+        }
+
+        /* Target must exist and be writable by this user */
+        var secure = new GlideRecordSecure(targetTable);
+        if (!secure.isValid()) {
+            data.error = 'Invalid target table.';
+            return;
+        }
+        if (!secure.get(targetId)) {
+            data.error = 'Target record not found. Save the record first.';
+            return;
+        }
+        if (!secure.canWrite()) {
+            data.error = 'You do not have permission to attach files to this record.';
+            return;
+        }
+
+        var target = new GlideRecord(targetTable);
+        target.get(targetId);
+
+        var gsa    = new GlideSysAttachment();
+        var failed = [];
+
+        for (var i = 0; i < ids.length; i++) {
+            var file = getRecord(FILE_TABLE, ids[i]);
+
+            /* Reuse the widget's own permission model (owner / share / folder share) */
+            if (!file || isDeleted(file) || !getFilePermission(file)) {
+                failed.push('a file you cannot access');
+                continue;
+            }
+
+            var attId = getAttachmentId(file.getUniqueValue());
+            if (!attId) {
+                failed.push(file.getValue('filename') || 'a file');
+                continue;
+            }
+
+            var att = new GlideRecord('sys_attachment');
+            if (!att.get(attId)) {
+                failed.push(file.getValue('filename') || 'a file');
+                continue;
+            }
+
+            var newId = gsa.writeContentStream(
+                target,
+                att.getValue('file_name'),
+                att.getValue('content_type'),
+                gsa.getContentStream(attId)
+            );
+
+            if (newId) data.attached_count++;
+            else failed.push(att.getValue('file_name'));
+        }
+
+        if (failed.length)
+            data.error = 'Could not attach: ' + failed.join(', ');
+        else
+            data.success = data.attached_count + ' file(s) attached.';
     }
 
     /* ==================================================
@@ -3575,40 +3742,40 @@ api.link = function ($scope, element) {
     }
 
     function deleteFolderPermanent() {
-    var folder = getRecord(FOLDER_TABLE, input.sys_id);
+        var folder = getRecord(FOLDER_TABLE, input.sys_id);
 
-    if (!folder || !canOwnFolder(folder) || !isDeleted(folder)) {
-        data.error = 'You cannot permanently delete this folder.';
-        return;
+        if (!folder || !canOwnFolder(folder) || !isDeleted(folder)) {
+            data.error = 'You cannot permanently delete this folder.';
+            return;
+        }
+
+        var folderId = folder.getUniqueValue();
+
+        // Check for child folders
+        var childFolders = new GlideRecord(FOLDER_TABLE);
+        childFolders.addQuery('parent_folder', folderId);
+        childFolders.setLimit(1);
+        childFolders.query();
+
+        if (childFolders.hasNext()) {
+            data.error = 'Cannot delete this folder because subfolders still exist.';
+            return;
+        }
+
+        // Check for files
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('folder', folderId);
+        files.setLimit(1);
+        files.query();
+
+        if (files.hasNext()) {
+            data.error = 'Cannot delete this folder because files still exist.';
+            return;
+        }
+
+        folder.deleteRecord();
+        data.success = 'Folder permanently deleted.';
     }
-
-    var folderId = folder.getUniqueValue();
-
-    // Check for child folders
-    var childFolders = new GlideRecord(FOLDER_TABLE);
-    childFolders.addQuery('parent_folder', folderId);
-    childFolders.setLimit(1);
-    childFolders.query();
-
-    if (childFolders.hasNext()) {
-        data.error = 'Cannot delete this folder because subfolders still exist.';
-        return;
-    }
-
-    // Check for files
-    var files = new GlideRecord(FILE_TABLE);
-    files.addQuery('folder', folderId);
-    files.setLimit(1);
-    files.query();
-
-    if (files.hasNext()) {
-        data.error = 'Cannot delete this folder because files still exist.';
-        return;
-    }
-
-    folder.deleteRecord();
-    data.success = 'Folder permanently deleted.';
-}
 
     /* ==================================================
        SHARE FILE OR FOLDER
@@ -3780,7 +3947,7 @@ api.link = function ($scope, element) {
         // Find shares:
         // 1) Shared with current user
         // 2) Shared with a group current user belongs to
-        // 3) Shared BY current user (so items shared by you are populated and counted!)
+        // 3) Shared BY current user
         var qc = shares.addQuery('shared_with_user', userId);
         try {
             var myGroups = gs.getUser().getMyGroups();
@@ -3912,14 +4079,6 @@ api.link = function ($scope, element) {
        PRIVATE HELPERS
     ================================================== */
 
-    /**
-     * Check whether a folder with 'name' already exists (non-deleted) at a
-     * given parent location, owned by the current user.
-     *
-     * @param {string} name         Folder name to check
-     * @param {string} parentFolder Parent folder sys_id (or '' for root)
-     * @param {string} excludeId    sys_id to exclude (the folder being renamed)
-     */
     function _folderNameExists(name, parentFolder, excludeId) {
         var dup = new GlideRecord(FOLDER_TABLE);
         dup.addQuery('owner', userId);
@@ -3939,28 +4098,25 @@ api.link = function ($scope, element) {
         return dup.hasNext();
     }
 
-})();
-
-]]></script>
+})();]]></script>
         <servicenow>false</servicenow>
         <sys_class_name>sp_widget</sys_class_name>
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-04 11:15:08</sys_created_on>
         <sys_id>53595bdec35c5710c05a33bc0501312a</sys_id>
-        <sys_mod_count>51</sys_mod_count>
+        <sys_mod_count>52</sys_mod_count>
         <sys_name>File home</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sp_widget_53595bdec35c5710c05a33bc0501312a</sys_update_name>
-        <sys_updated_by>admin</sys_updated_by>
-        <sys_updated_on>2026-11-09 08:43:54</sys_updated_on>
-        <template><![CDATA[<div class="fm-app" ng-keydown="c.onKeyDown($event)" ng-click="c.closeContextMenu()">
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-11 13:06:38</sys_updated_on>
+        <template><![CDATA[<div class="fm-app" ng-class="{'fm-picker': c.pickerMode}" ng-keydown="c.onKeyDown($event)" ng-click="c.closeContextMenu()">
 
   <!-- =========================================
        SIDEBAR
   ========================================= -->
-  
 
 <!-- SIDEBAR -->
 <aside class="fm-sidebar">
@@ -4109,12 +4265,18 @@ api.link = function ($scope, element) {
 
 </aside>
 
-
-
   <!-- =========================================
        MAIN CONTENT
   ========================================= -->
   <main class="fm-main">
+
+    <!-- PICKER MODE BANNER -->
+    <div ng-if="c.pickerMode"
+         style="margin:0 0 12px; padding:10px 14px; background:#eef4ff; border:1px solid #cfe0ff; border-radius:8px; font-size:12px; color:#2b4f9a; display:flex; align-items:center; gap:8px;">
+      <i class="fa fa-paperclip"></i>
+      <span>Double-click a file to attach it, or tick files and click <strong>Attach selected</strong>.</span>
+      <strong ng-if="c.pickBusy" style="margin-left:auto;"><i class="fa fa-spinner fa-spin"></i> Attaching...</strong>
+    </div>
 
     <!-- TOP HEADER -->
     <header class="fm-header">
@@ -4300,6 +4462,7 @@ api.link = function ($scope, element) {
             </thead>
             <tbody>
               <tr ng-repeat="file in c.data.files | limitTo:8"
+                  ng-dblclick="c.onRowDblClick(file)"
                   fm-context-type="file"
                   fm-context-item>
                 <td>
@@ -4352,7 +4515,7 @@ api.link = function ($scope, element) {
     </section>
 
     <!-- =========================================
-         ALL FILES VIEW (NEW!)
+         ALL FILES VIEW
     ========================================= -->
     <section ng-if="c.view == 'allfiles'" class="fm-content">
 
@@ -4401,10 +4564,12 @@ api.link = function ($scope, element) {
           </thead>
           <tbody>
             <tr ng-repeat="file in c.allFilesFiltered() | orderBy:c.fileSort"
+                ng-dblclick="c.onRowDblClick(file)"
                 fm-context-type="file"
                 fm-context-item>
               <td>
-                <input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()">
+                <input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()"
+                       ng-dblclick="$event.stopPropagation()">
               </td>
               <td>
                 <div class="fm-file-name">
@@ -4453,8 +4618,11 @@ api.link = function ($scope, element) {
       <!-- Bulk Actions Bar -->
       <div style="margin-top:12px; display:flex; align-items:center; gap:8px;" ng-if="c.selectedCount() > 0">
         <span style="font-size:12px; color:#3478df; font-weight:600;">{{c.selectedCount()}} selected</span>
-        <button class="fm-button" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
-        <button class="fm-button fm-danger" ng-click="c.confirmDeleteSelected()"><i class="fa fa-trash"></i> Delete Selected</button>
+        <button class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()">
+          <i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}
+        </button>
+        <button class="fm-button" ng-if="!c.pickerMode" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
+        <button class="fm-button fm-danger" ng-if="!c.pickerMode" ng-click="c.confirmDeleteSelected()"><i class="fa fa-trash"></i> Delete Selected</button>
         <button class="fm-button" ng-click="c.clearSelection()">Clear</button>
       </div>
 
@@ -4561,7 +4729,7 @@ api.link = function ($scope, element) {
             New Subfolder
           </button>
 
-          <!-- DIRECT UPLOAD BUTTON (native label click that directly triggers file selector) -->
+          <!-- DIRECT UPLOAD BUTTON -->
           <label class="fm-button fm-primary" ng-class="{'fm-disabled': c.uploading}">
             <i class="fa fa-upload"></i>
             {{c.uploading ? 'Uploading...' : 'Upload Files'}}
@@ -4573,21 +4741,6 @@ api.link = function ($scope, element) {
           </label>
         </div>
       </div>
-
-      <!-- Drag & Drop Zone (Drag files or Click to Upload) 
-      <label class="fm-drop-zone"
-             ng-if="c.currentFolderCanEdit()"
-             ng-class="{'fm-drag-over': c.dragOver, 'fm-disabled': c.uploading}"
-             style="cursor: pointer; display: block;"
-             fm-drop-zone>
-        <i class="fa fa-cloud-upload"></i>
-        <span>Drag and drop files here or <strong style="color:#3478df; text-decoration:underline;">browse files</strong> to upload into <strong>{{c.currentFolderName}}</strong></span>
-        <input type="file"
-               multiple
-               style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;"
-               ng-disabled="c.uploading"
-               onchange="angular.element(this).scope().c.onDirectFilesSelected(this)">
-      </label>-->
 
       <!-- Upload Progress -->
       <div class="fm-upload-progress" ng-if="c.uploading">
@@ -4653,10 +4806,12 @@ api.link = function ($scope, element) {
             </thead>
             <tbody>
               <tr ng-repeat="file in c.filesInCurrentFolder() | filter:c.searchFiles | orderBy:c.fileSort"
+                  ng-dblclick="c.onRowDblClick(file)"
                   fm-context-type="file"
                   fm-context-item>
                 <td>
-                  <input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()">
+                  <input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()"
+                         ng-dblclick="$event.stopPropagation()">
                 </td>
                 <td>
                   <div class="fm-file-name">
@@ -4697,8 +4852,11 @@ api.link = function ($scope, element) {
         <!-- Bulk Action Bar -->
         <div style="margin-top:12px; display:flex; align-items:center; gap:8px;" ng-if="c.selectedCount() > 0">
           <span style="font-size:12px; color:#3478df; font-weight:600;">{{c.selectedCount()}} selected</span>
-          <button class="fm-button" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
-          <button class="fm-button fm-danger" ng-click="c.confirmDeleteSelected()"><i class="fa fa-trash"></i> Delete Selected</button>
+          <button class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()">
+            <i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}
+          </button>
+          <button class="fm-button" ng-if="!c.pickerMode" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
+          <button class="fm-button fm-danger" ng-if="!c.pickerMode" ng-click="c.confirmDeleteSelected()"><i class="fa fa-trash"></i> Delete Selected</button>
           <button class="fm-button" ng-click="c.clearSelection()">Clear</button>
         </div>
 
@@ -4760,6 +4918,7 @@ api.link = function ($scope, element) {
             </thead>
             <tbody>
               <tr ng-repeat="file in c.data.sharedFiles | filter:c.searchFiles"
+                  ng-dblclick="c.onRowDblClick(file)"
                   fm-context-type="file"
                   fm-context-item>
                 <td>
@@ -4904,7 +5063,7 @@ api.link = function ($scope, element) {
     </section>
 
     <!-- =========================================
-         STORAGE (NO UPLOAD BUTTON HERE!)
+         STORAGE
     ========================================= -->
     <section ng-if="c.view == 'storage'" class="fm-content">
 
@@ -4986,7 +5145,6 @@ api.link = function ($scope, element) {
 
   <!-- =========================================
        UPLOAD DESTINATION FOLDER PICKER MODAL
-       (Asks which folder to upload to!)
   ========================================= -->
   <div class="fm-modal-backdrop" ng-if="c.showUploadFolderPicker">
     <div class="fm-modal" ng-click="$event.stopPropagation()">
@@ -5027,7 +5185,6 @@ api.link = function ($scope, element) {
           Cancel
         </button>
 
-        <!-- Direct Native Upload Label Button -->
         <label class="fm-button fm-primary"
                ng-class="{'fm-disabled': !c.targetUploadFolder || c.uploading}">
           <i class="fa fa-upload"></i>
@@ -5382,8 +5539,7 @@ api.link = function ($scope, element) {
 
   </div>
 
-</div>
-]]></template>
+</div>]]></template>
     </sp_widget>
     <sys_es_latest_script action="INSERT_OR_UPDATE">
         <id>53595bdec35c5710c05a33bc0501312a</id>

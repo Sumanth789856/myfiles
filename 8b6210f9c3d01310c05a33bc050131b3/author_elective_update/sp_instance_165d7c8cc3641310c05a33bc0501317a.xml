@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sp_instance">
+    <sp_instance action="DELETE">
+        <active>true</active>
+        <advanced_placeholder_dimensions>false</advanced_placeholder_dimensions>
+        <async_load>false</async_load>
+        <async_load_device_type>desktop,tablet,mobile</async_load_device_type>
+        <async_load_trigger>viewport</async_load_trigger>
+        <class_name>fm-custom-widget</class_name>
+        <color>success</color>
+        <css>/* Reduce OOTB widget button width */&#13;
+.fm-custom-widget .btn {&#13;
+    width: auto !important;&#13;
+    min-width: 100px;&#13;
+    padding: 6px 14px !important;&#13;
+    display: inline-block !important;&#13;
+}&#13;
+&#13;
+/* Override full-width Bootstrap buttons */&#13;
+.fm-custom-widget .btn-block {&#13;
+    width: auto !important;&#13;
+}</css>
+        <glyph>file-text</glyph>
+        <id/>
+        <order>2</order>
+        <placeholder_dimensions>{&#13;	"mobile": {&#13;		"height": "250px",&#13;		"width": "100%"&#13;	},&#13;	"desktop": {&#13;		"height": "250px",&#13;		"width": "100%"&#13;	},&#13;	"tablet": {&#13;		"height": "250px",&#13;		"width": "100%"&#13;	}&#13;}</placeholder_dimensions>
+        <placeholder_dimensions_script><![CDATA[function evaluateConfig(options) { return {	"mobile": {		"height": "250px",		"width": "100%"	},	"desktop": {		"height": "250px",		"width": "100%"	},	"tablet": {		"height": "250px",		"width": "100%"	}}; }]]></placeholder_dimensions_script>
+        <placeholder_template>&lt;!-- 
+	AngularJS template with configurable options.
+	Use the `options` object to control dynamic behavior.
+	Example: Display an element when max row count is 10:
+	&lt;div ng-if="options.maxRowCount === 10"&gt;&lt;/div&gt;
+	The `skeleton-container` class is used for loading placeholders.
+--&gt;
+	&lt;div class="skeleton-container"&gt;
+	&lt;!-- Header Skeleton --&gt;
+	&lt;div class="skeleton-box skeleton-header"&gt;&lt;/div&gt;
+	&lt;!-- Body Skeleton --&gt;
+	&lt;div class="skeleton-box skeleton-line"&gt;&lt;/div&gt;
+	&lt;div class="skeleton-box skeleton-line small"&gt;&lt;/div&gt;
+	&lt;div class="skeleton-box skeleton-line medium"&gt;&lt;/div&gt;
+&lt;/div&gt;</placeholder_template>
+        <preserve_placeholder_size>false</preserve_placeholder_size>
+        <roles/>
+        <short_description/>
+        <size>md</size>
+        <sp_column display_value="1">445df88cc3641310c05a33bc050131da</sp_column>
+        <sp_widget display_value="link-button">abc50de6d702120023c84f80de61036a</sp_widget>
+        <sys_class_name>sp_instance</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-09 10:22:53</sys_created_on>
+        <sys_id>165d7c8cc3641310c05a33bc0501317a</sys_id>
+        <sys_mod_count>15</sys_mod_count>
+        <sys_name>All files</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sp_instance_165d7c8cc3641310c05a33bc0501317a</sys_update_name>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-09 10:39:14</sys_updated_on>
+        <title>All files</title>
+        <url/>
+        <widget_parameters><![CDATA[{
+	"href": {
+		"value": "",
+		"displayValue": ""
+	},
+	"button_text": {
+		"value": "All Files",
+		"displayValue": "All Files"
+	}
+}]]></widget_parameters>
+    </sp_instance>
+    <sys_translated_text action="DELETE" query="documentkey=165d7c8cc3641310c05a33bc0501317a"/>
+    <sys_update_version action="INSERT_OR_UPDATE">
+        <action>DELETE</action>
+        <application display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</application>
+        <file_path/>
+        <instance_id>e3a722061b2275d01024eb9b2d4bcb3f</instance_id>
+        <instance_name>dev215720</instance_name>
+        <name>sp_instance_165d7c8cc3641310c05a33bc0501317a</name>
+        <payload>&lt;?xml version="1.0" encoding="UTF-8"?&gt;&lt;record_update table="sp_instance"&gt;&lt;sp_instance action="INSERT_OR_UPDATE"&gt;&lt;active&gt;true&lt;/active&gt;&lt;advanced_placeholder_dimensions&gt;false&lt;/advanced_placeholder_dimensions&gt;&lt;async_load&gt;false&lt;/async_load&gt;&lt;async_load_device_type&gt;desktop,tablet,mobile&lt;/async_load_device_type&gt;&lt;async_load_trigger&gt;viewport&lt;/async_load_trigger&gt;&lt;class_name&gt;fm-custom-widget&lt;/class_name&gt;&lt;color&gt;success&lt;/color&gt;&lt;css&gt;/* Reduce OOTB widget button width */&amp;#13;
+.fm-custom-widget .btn {&amp;#13;
+    width: auto !important;&amp;#13;
+    min-width: 100px;&amp;#13;
+    padding: 6px 14px !important;&amp;#13;
+    display: inline-block !important;&amp;#13;
+}&amp;#13;
+&amp;#13;
+/* Override full-width Bootstrap buttons */&amp;#13;
+.fm-custom-widget .btn-block {&amp;#13;
+    width: auto !important;&amp;#13;
+}&lt;/css&gt;&lt;glyph&gt;file-text&lt;/glyph&gt;&lt;id/&gt;&lt;order&gt;2&lt;/order&gt;&lt;placeholder_dimensions&gt;{&amp;#13;	"mobile": {&amp;#13;		"height": "250px",&amp;#13;		"width": "100%"&amp;#13;	},&amp;#13;	"desktop": {&amp;#13;		"height": "250px",&amp;#13;		"width": "100%"&amp;#13;	},&amp;#13;	"tablet": {&amp;#13;		"height": "250px",&amp;#13;		"width": "100%"&amp;#13;	}&amp;#13;}&lt;/placeholder_dimensions&gt;&lt;placeholder_dimensions_script&gt;&lt;![CDATA[function evaluateConfig(options) { return {	"mobile": {		"height": "250px",		"width": "100%"	},	"desktop": {		"height": "250px",		"width": "100%"	},	"tablet": {		"height": "250px",		"width": "100%"	}}; }]]&gt;&lt;/placeholder_dimensions_script&gt;&lt;placeholder_template&gt;&amp;lt;!-- 
+	AngularJS template with configurable options.
+	Use the `options` object to control dynamic behavior.
+	Example: Display an element when max row count is 10:
+	&amp;lt;div ng-if="options.maxRowCount === 10"&amp;gt;&amp;lt;/div&amp;gt;
+	The `skeleton-container` class is used for loading placeholders.
+--&amp;gt;
+	&amp;lt;div class="skeleton-container"&amp;gt;
+	&amp;lt;!-- Header Skeleton --&amp;gt;
+	&amp;lt;div class="skeleton-box skeleton-header"&amp;gt;&amp;lt;/div&amp;gt;
+	&amp;lt;!-- Body Skeleton --&amp;gt;
+	&amp;lt;div class="skeleton-box skeleton-line"&amp;gt;&amp;lt;/div&amp;gt;
+	&amp;lt;div class="skeleton-box skeleton-line small"&amp;gt;&amp;lt;/div&amp;gt;
+	&amp;lt;div class="skeleton-box skeleton-line medium"&amp;gt;&amp;lt;/div&amp;gt;
+&amp;lt;/div&amp;gt;&lt;/placeholder_template&gt;&lt;preserve_placeholder_size&gt;false&lt;/preserve_placeholder_size&gt;&lt;roles/&gt;&lt;short_description/&gt;&lt;size&gt;md&lt;/size&gt;&lt;sp_column display_value="1"&gt;445df88cc3641310c05a33bc050131da&lt;/sp_column&gt;&lt;sp_widget display_value="link-button"&gt;abc50de6d702120023c84f80de61036a&lt;/sp_widget&gt;&lt;sys_class_name&gt;sp_instance&lt;/sys_class_name&gt;&lt;sys_created_by&gt;sumanth&lt;/sys_created_by&gt;&lt;sys_created_on&gt;2026-11-09 10:22:53&lt;/sys_created_on&gt;&lt;sys_id&gt;165d7c8cc3641310c05a33bc0501317a&lt;/sys_id&gt;&lt;sys_mod_count&gt;15&lt;/sys_mod_count&gt;&lt;sys_name&gt;All files&lt;/sys_name&gt;&lt;sys_package display_value="FileManager" source="x_1830514_fm"&gt;8b6210f9c3d01310c05a33bc050131b3&lt;/sys_package&gt;&lt;sys_policy/&gt;&lt;sys_scope display_value="FileManager"&gt;8b6210f9c3d01310c05a33bc050131b3&lt;/sys_scope&gt;&lt;sys_update_name&gt;sp_instance_165d7c8cc3641310c05a33bc0501317a&lt;/sys_update_name&gt;&lt;sys_updated_by&gt;sumanth&lt;/sys_updated_by&gt;&lt;sys_updated_on&gt;2026-11-09 10:39:14&lt;/sys_updated_on&gt;&lt;title&gt;All files&lt;/title&gt;&lt;url/&gt;&lt;widget_parameters&gt;&lt;![CDATA[{
+	"href": {
+		"value": "",
+		"displayValue": ""
+	},
+	"button_text": {
+		"value": "All Files",
+		"displayValue": "All Files"
+	}
+}]]&gt;&lt;/widget_parameters&gt;&lt;/sp_instance&gt;&lt;sys_translated_text action="delete_multiple" query="documentkey=165d7c8cc3641310c05a33bc0501317a"/&gt;&lt;/record_update&gt;</payload>
+        <payload_hash>-952216397</payload_hash>
+        <record_name>All files</record_name>
+        <reverted_from/>
+        <source>13c664cbc3d09b10c05a33bc050131f3</source>
+        <source_table>sys_update_set</source_table>
+        <state>previous</state>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-09 10:39:14</sys_created_on>
+        <sys_id>f511c984c3a41310c05a33bc05013109</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_recorded_at>1a1bfe404e30000001</sys_recorded_at>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-09 10:39:14</sys_updated_on>
+        <type>Instance</type>
+        <update_guid>3511c984a1a41310075073f254242008</update_guid>
+        <update_guid_history>3511c984a1a41310075073f254242008:-952216397,e7d0818405a41310bedd43d709ba3d1e:-847814057,dd30c90474a41310f0bd4125154e9391:245302480,ff10490402a413100a62e8fa5eed5149:558515610,a0100904c2a413106b346dd50f57a485:1531396050,73ef3404aba41310650cda96648fac64:-272422772,a0ef38c097a4131054030b9f1739e05d:878942485,1d4f3c8092a41310d051b62d298db86b:-230416165,272ff880a5a41310e351d9b9b4e4a962:1606012810,070ff4806fa41310f476ea93881dcd94:1921305878,a8ee708098a41310678e2571f2b69079:1677611953,434e7c00d9a4131019cbcdf106301286:-1214239775,f22eb80085a41310eb7aa25d211aabc9:-1675260128,eaed3000e5a4131096d8509bd20e69bd:-799619371,bc8d384c4b6413105d4d57518e0f3220:1780496853,d65d7c8c016413104d529e933ebba67d:-1620582168</update_guid_history>
+    </sys_update_version>
+    <sys_metadata_delete action="INSERT_OR_UPDATE">
+        <sys_audit_delete display_value="All files">b2214d84c3a41310c05a33bc050131a7</sys_audit_delete>
+        <sys_class_name>sys_metadata_delete</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-09 10:39:34</sys_created_on>
+        <sys_db_object display_value="" name="sp_instance">sp_instance</sys_db_object>
+        <sys_id>4aabfa46a1944698b72b92e6a66dd0e4</sys_id>
+        <sys_metadata>165d7c8cc3641310c05a33bc0501317a</sys_metadata>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>All files</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_parent/>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_scope_delete display_value="">0ce7e5c8e51849d4822871c8bb2d3d10</sys_scope_delete>
+        <sys_update_name>sp_instance_165d7c8cc3641310c05a33bc0501317a</sys_update_name>
+        <sys_update_version display_value="sp_instance_165d7c8cc3641310c05a33bc0501317a">f511c984c3a41310c05a33bc05013109</sys_update_version>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-09 10:39:34</sys_updated_on>
+    </sys_metadata_delete>
+</record_update>
