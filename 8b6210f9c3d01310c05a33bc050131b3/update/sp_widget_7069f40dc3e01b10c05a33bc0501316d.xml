@@ -1,0 +1,5544 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sp_widget">
+    <sp_widget action="INSERT_OR_UPDATE">
+        <category>custom</category>
+        <client_script><![CDATA[/**
+ * File Manager Widget — Client Script (AngularJS Controller + Link Function)
+ * ServiceNow Service Portal Widget
+ */
+
+api.controller = function ($scope, $http, $timeout, $location) {
+    var c = this;
+
+    /* ===================================================
+       STATE
+    =================================================== */
+    c.view            = 'home';        // 'home' | 'allfiles' | 'folders' | 'files' | 'shared' | 'recycle' | 'storage'
+    c.currentFolder   = '';
+    c.currentFolderName = '';
+    c.searchText      = '';
+    c.loading         = false;
+
+    // Breadcrumb path: array of {id, name}
+    c.breadcrumb      = [];
+
+    // Sorting & Filtering
+    c.folderSort      = 'folder_name';
+    c.fileSort        = 'filename';
+    c.fileTypeFilter  = '';
+
+    // Modals
+    c.showFolderModal        = false;
+    c.showShareModal         = false;
+    c.showEditFileModal      = false;
+    c.showUploadFolderPicker = false;
+    c.previewFile            = null;
+
+    // Upload Destination Picker State
+    c.targetUploadFolder     = '';
+    c.targetUploadFolderName = '';
+
+    // Folder Create / Rename
+    c.newFolderName        = '';
+    c.newFolderDescription = '';
+    c.editFolderTarget     = null;     // null = create, object = rename
+
+    // Share State
+    c.shareRecipientType    = 'user';  // 'user' | 'group'
+    c.selectedUser          = '';
+    c.selectedGroup         = '';
+    c.sharePermission       = 'Viewer';
+    c.shareExpirationDate   = '';
+    c.shareTarget           = null;
+    c.shareType             = 'file';
+
+    c.userSearchText        = '';
+    c.userSearchLoading     = false;
+    c.userSearchError       = '';
+    c.userSearchTimer       = null;
+
+    c.groupSearchText       = '';
+    c.groupSearchLoading    = false;
+    c.groupSearchError      = '';
+    c.groupSearchTimer      = null;
+
+    // Edit File Description State
+    c.editFileTarget      = null;
+    c.editFileDescription = '';
+
+    // Confirmation Modal
+    c.confirmModal = {
+        show: false, title: '', message: '',
+        confirmLabel: 'Confirm', danger: false,
+        icon: 'fa-check', onConfirm: angular.noop
+    };
+
+    // Right-Click Context Menu
+    c.contextMenu = {
+        show: false,
+        x: 0,
+        y: 0,
+        item: null,
+        type: ''
+    };
+
+    // Upload State
+    c.uploading         = false;
+    c.uploadProgress    = 0;
+    c.uploadIndex       = 0;
+    c.uploadTotal       = 0;
+    c.uploadCurrentName = '';
+
+    // Selection
+    c.allSelected = false;
+
+    // Drag and Drop
+    c.dragOver = false;
+
+    // Alert Messages
+    c.message = '';
+    c.error   = '';
+
+    /* ===================================================
+       PICKER MODE (opened from the attachment dialog)
+    =================================================== */
+    var _qs = $location.search();
+
+    c.pickerMode  = _qs.picker === 'true';
+    c.targetTable = _qs.target_table || '';
+    c.targetSysId = _qs.target_sys_id || '';
+    c.pickBusy    = false;
+
+    c.getSelectedFiles = function () {
+        var seen = {};
+        return (c.data.files || []).concat(c.data.sharedFiles || []).filter(function (f) {
+            if (!f._selected || seen[f.sys_id]) return false;
+            seen[f.sys_id] = true;
+            return true;
+        });
+    };
+
+    c.attachFiles = function (ids) {
+        if (c.pickBusy || !ids || !ids.length) return;
+
+        if (!c.targetTable || !c.targetSysId) {
+            c.error = 'Missing target record. Open this page from the attachment dialog.';
+            return;
+        }
+
+        c.pickBusy = true;
+        _clearAlerts();
+
+        c.server.get({
+            action:        'attach_to_record',
+            file_ids:      ids,
+            target_table:  c.targetTable,
+            target_sys_id: c.targetSysId
+        }).then(function (res) {
+            c.pickBusy = false;
+            var r = (res && res.data) ? res.data : res;
+
+            if (r && r.attached_count > 0) {
+                var msg = { type: 'FM_FILE_ATTACHED', count: r.attached_count };
+
+                // Notify the dialog: BroadcastChannel first, postMessage as backup
+                try {
+                    var ch = new BroadcastChannel('fm_attach_channel');
+                    ch.postMessage(msg);
+                    ch.close();
+                } catch (e) {}
+
+                try {
+                    if (window.opener) window.opener.postMessage(msg, window.location.origin);
+                } catch (e) {}
+
+                if (r.error) c.error = r.error;   // some failed: stay open and show why
+                else window.close();
+            } else {
+                c.error = (r && r.error) || 'Could not attach the selected file(s).';
+            }
+        }, function () {
+            c.pickBusy = false;
+            c.error = 'Server request failed. Please try again.';
+        });
+    };
+
+    // "Attach selected" button
+    c.attachSelected = function () {
+        var ids = c.getSelectedFiles().map(function (f) { return f.sys_id; });
+        c.attachFiles(ids);
+    };
+
+    // Double-click on a file row: attach just that file
+    c.onRowDblClick = function (file) {
+        if (!c.pickerMode || !file || !file.sys_id) return;
+        c.attachFiles([file.sys_id]);
+    };
+
+    /* ===================================================
+       NAVIGATION
+    =================================================== */
+
+    c.goHome = function () {
+        c.view              = 'home';
+        c.currentFolder     = '';
+        c.currentFolderName = '';
+        c.searchText        = '';
+        c.breadcrumb        = [];
+        _clearAlerts();
+        _clearSelection();
+        c.closeContextMenu();
+    };
+
+    c.setView = function (view) {
+        c.view              = view;
+        c.currentFolder     = '';
+        c.currentFolderName = '';
+        c.searchText        = '';
+        c.breadcrumb        = [];
+        _clearAlerts();
+        _clearSelection();
+        c.closeContextMenu();
+    };
+
+    c.openFolder = function (folder) {
+        if (!folder) return;
+
+        if (c.view !== 'files') {
+            c.breadcrumb = [
+                { id: '', name: 'Folders' },
+                { id: folder.sys_id, name: folder.folder_name }
+            ];
+        } else {
+            c.breadcrumb.push({ id: folder.sys_id, name: folder.folder_name });
+        }
+
+        c.currentFolder     = folder.sys_id;
+        c.currentFolderName = folder.folder_name;
+        c.view              = 'files';
+        c.searchText        = '';
+        _clearAlerts();
+        _clearSelection();
+        c.closeContextMenu();
+    };
+
+    c.openFolderById = function (folderId) {
+        if (!folderId) return;
+        var folder = (c.data.folders || []).concat(c.data.sharedFolders || []).filter(function (f) {
+            return f.sys_id === folderId;
+        })[0];
+        if (folder) c.openFolder(folder);
+    };
+
+    c.navigateBreadcrumb = function (index) {
+        var crumb = c.breadcrumb[index];
+        if (!crumb) return;
+
+        c.breadcrumb = c.breadcrumb.slice(0, index + 1);
+
+        if (!crumb.id) {
+            c.view              = 'folders';
+            c.currentFolder     = '';
+            c.currentFolderName = '';
+        } else {
+            c.currentFolder     = crumb.id;
+            c.currentFolderName = crumb.name;
+            c.view              = 'files';
+        }
+
+        c.searchText = '';
+        _clearSelection();
+        c.closeContextMenu();
+    };
+
+    c.navigateBack = function () {
+        if (c.breadcrumb.length > 2) {
+            c.navigateBreadcrumb(c.breadcrumb.length - 2);
+        } else {
+            c.setView('folders');
+        }
+    };
+
+    /* ===================================================
+       FOLDER & FILE QUERIES
+    =================================================== */
+
+    /** All folders where user can add files (owned or editor) */
+    c.editableFolders = function () {
+        var owned = (c.data.folders || []);
+        var sharedEdit = (c.data.sharedFolders || []).filter(function (f) {
+            return f.can_edit;
+        });
+        return owned.concat(sharedEdit);
+    };
+
+    c.foldersInCurrentFolder = function () {
+        var list = (c.data.folders || []).concat(c.data.sharedFolders || []);
+        var seen = {};
+        return list.filter(function (f) {
+            if (!f || seen[f.sys_id]) return false;
+            seen[f.sys_id] = true;
+            return (f.parent_folder || '') === (c.currentFolder || '');
+        });
+    };
+
+    c.filesInCurrentFolder = function () {
+        var list = (c.data.files || []).concat(c.data.sharedFiles || []);
+        var seen = {};
+        return list.filter(function (f) {
+            if (!f || seen[f.sys_id]) return false;
+            seen[f.sys_id] = true;
+            return (f.folder || '') === (c.currentFolder || '');
+        });
+    };
+
+    c.currentFolderCanEdit = function () {
+        if (!c.currentFolder) return false;
+        var match = (c.data.folders || []).concat(c.data.sharedFolders || []).filter(function (f) {
+            return f.sys_id === c.currentFolder;
+        })[0];
+        return match && match.can_edit;
+    };
+
+    c.getFolderName = function (folderId, file) {
+        if (file && file.folder_name) return file.folder_name;
+        if (!folderId) return '';
+        var f = (c.data.folders || []).concat(c.data.sharedFolders || []).filter(function (item) {
+            return item.sys_id === folderId;
+        })[0];
+        return f ? f.folder_name : '';
+    };
+
+    c.allFilesFiltered = function () {
+        return (c.data.files || []).filter(function (file) {
+            // Search text filter
+            if (c.searchText) {
+                var hit = (file.filename || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
+                if (!hit) return false;
+            }
+
+            // Type filter
+            if (!c.fileTypeFilter) return true;
+
+            var ext = (file.file_extension || '').toLowerCase();
+            switch (c.fileTypeFilter) {
+                case 'image':
+                    return ['png','jpg','jpeg','gif','webp','bmp','svg'].indexOf(ext) !== -1;
+                case 'document':
+                    return ['doc','docx','odt','rtf','txt','md','xls','xlsx','csv','ppt','pptx'].indexOf(ext) !== -1;
+                case 'pdf':
+                    return ext === 'pdf';
+                case 'archive':
+                    return ['zip','rar','7z','tar','gz'].indexOf(ext) !== -1;
+                default:
+                    return true;
+            }
+        });
+    };
+
+    c.searchFiles = function (file) {
+        if (!c.searchText) return true;
+        return (file.filename || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
+    };
+
+    c.searchFolders = function (folder) {
+        if (!c.searchText) return true;
+        return (folder.folder_name || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
+    };
+
+    /* ===================================================
+       SORTING
+    =================================================== */
+
+    c.toggleSort = function (field) {
+        if (c.fileSort === field)            c.fileSort = '-' + field;
+        else if (c.fileSort === '-' + field) c.fileSort = field;
+        else c.fileSort = field;
+    };
+
+    c.getSortIcon = function (field) {
+        if (c.fileSort === field)       return 'fa-sort-asc';
+        if (c.fileSort === '-' + field) return 'fa-sort-desc';
+        return 'fa-sort';
+    };
+
+    /* ===================================================
+       SERVER ACTIONS & REFRESH
+    =================================================== */
+
+    c.runAction = function (action, values) {
+        values        = values || {};
+        values.action = action;
+        _clearAlerts();
+
+        return c.server.get(values).then(function (res) {
+            var returned = (res && res.data) ? res.data : res;
+            if (returned) {
+                if (returned.files || returned.folders) {
+                    c.data = returned;
+                }
+                if (returned.error)   c.error   = returned.error;
+                if (returned.success) c.message = returned.success;
+            }
+            return returned || {};
+        }, function () {
+            c.error = 'Server request failed. Please try again.';
+            return { error: c.error };
+        });
+    };
+
+    c.refresh = function () {
+        c.loading = true;
+        _clearAlerts();
+
+        return c.server.get({ action: 'refresh' }).then(function (res) {
+            c.loading = false;
+            var returned = (res && res.data) ? res.data : res;
+            if (returned && (returned.files || returned.folders)) {
+                c.data = returned;
+            }
+            return c.data;
+        }, function () {
+            c.loading = false;
+            c.error = 'Unable to refresh. Please try again.';
+        });
+    };
+
+    /* ===================================================
+       UPLOAD FILES WITH FOLDER PICKER MODAL
+    =================================================== */
+
+    c.openUploadFolderPicker = function () {
+        var available = c.editableFolders();
+        if (c.currentFolder && c.currentFolderCanEdit()) {
+            c.targetUploadFolder     = c.currentFolder;
+            c.targetUploadFolderName = c.currentFolderName;
+        } else if (available.length > 0) {
+            c.targetUploadFolder     = available[0].sys_id;
+            c.targetUploadFolderName = available[0].folder_name;
+        } else {
+            c.targetUploadFolder     = '';
+            c.targetUploadFolderName = '';
+        }
+        c.showUploadFolderPicker = true;
+    };
+
+    c.onPickerFilesSelected = function (inputEl) {
+        var files = inputEl ? inputEl.files : null;
+        if (!files || !files.length) return;
+        var folderId = c.targetUploadFolder;
+
+        var run = function () {
+            c.showUploadFolderPicker = false;
+            _uploadFilesToFolder(files, folderId);
+            if (inputEl && inputEl.value !== undefined) inputEl.value = '';
+        };
+
+        if ($scope.$$phase) {
+            run();
+        } else {
+            $scope.$apply(run);
+        }
+    };
+
+    c.onDirectFilesSelected = function (inputEl) {
+        var files = inputEl ? inputEl.files : null;
+        if (!files || !files.length) return;
+        var folderId = c.currentFolder;
+
+        var run = function () {
+            _uploadFilesToFolder(files, folderId);
+            if (inputEl && inputEl.value !== undefined) inputEl.value = '';
+        };
+
+        if ($scope.$$phase) {
+            run();
+        } else {
+            $scope.$apply(run);
+        }
+    };
+
+    function _uploadFilesToFolder(fileList, folderId) {
+        var selectedFiles = Array.prototype.slice.call(fileList || []);
+        if (!selectedFiles.length) return;
+
+        if (!folderId) {
+            c.error = 'Please select a destination folder before uploading.';
+            return;
+        }
+
+        c.uploading         = true;
+        c.uploadProgress    = 0;
+        c.uploadIndex       = 0;
+        c.uploadTotal       = selectedFiles.length;
+        c.uploadCurrentName = '';
+        c.error             = '';
+
+        var failedFiles = [];
+
+        function uploadNext() {
+            if (c.uploadIndex >= selectedFiles.length) {
+                c.uploading = false;
+                c.refresh().then(function () {
+                    if (failedFiles.length) {
+                        c.error = 'Failed to upload: ' + failedFiles.join(', ');
+                    } else {
+                        c.message = selectedFiles.length === 1
+                            ? '"' + selectedFiles[0].name + '" uploaded successfully.'
+                            : selectedFiles.length + ' files uploaded successfully.';
+                    }
+                });
+                return;
+            }
+
+            var file      = selectedFiles[c.uploadIndex];
+            var extension = '';
+            if (file.name.indexOf('.') !== -1)
+                extension = file.name.split('.').pop().toLowerCase();
+
+            c.uploadCurrentName = file.name;
+            c.uploadProgress    = Math.round((c.uploadIndex / selectedFiles.length) * 100);
+            c.uploadIndex++;
+
+            c.runAction('create_file', {
+                filename:     file.name,
+                extension:    extension,
+                content_type: file.type || 'application/octet-stream',
+                file_size:    file.size,
+                folder:       folderId
+            }).then(function (result) {
+                if (result.error || !result.file_sys_id) {
+                    failedFiles.push(file.name);
+                    uploadNext();
+                    return;
+                }
+
+                var uploadUrl =
+                    '/api/now/attachment/file' +
+                    '?table_name=x_1830514_fm_file' +
+                    '&table_sys_id=' + encodeURIComponent(result.file_sys_id) +
+                    '&file_name='    + encodeURIComponent(file.name);
+
+                var token = window.g_ck || (c.data && c.data.g_ck) || '';
+                var headers = {
+                    'Content-Type': undefined,
+                    'Accept':       'application/json'
+                };
+                if (token) headers['X-UserToken'] = token;
+
+                $http.post(uploadUrl, file, {
+                    transformRequest: angular.identity,
+                    headers: headers
+                }).then(function () {
+                    c.uploadProgress = Math.round((c.uploadIndex / selectedFiles.length) * 100);
+                    uploadNext();
+                }, function () {
+                    failedFiles.push(file.name);
+                    uploadNext();
+                });
+            });
+        }
+
+        uploadNext();
+    }
+
+    /* ===================================================
+       FOLDER UPLOAD
+    =================================================== */
+
+    c.openFolderUploadPicker = function () {
+        c.triggerFolderUpload();
+    };
+
+    c.triggerFolderUpload = function () {
+        var input = document.getElementById('fmFolderUpload');
+
+        if (input) {
+            input.value = '';
+            input.click();
+        } else {
+            c.error = 'Folder upload input was not found.';
+        }
+    };
+
+    c.onFolderUploadSelected = function (input) {
+        var files = input && input.files;
+
+        if (!files || !files.length) {
+            return;
+        }
+
+        var folderName = '';
+
+        if (files[0].webkitRelativePath) {
+            folderName = files[0].webkitRelativePath.split('/')[0];
+        }
+
+        if (!folderName) {
+            c.error = 'Unable to identify the selected folder.';
+            input.value = '';
+            return;
+        }
+
+        // Create the selected folder in ServiceNow
+        c.runAction('create_folder', {
+            folder_name: folderName,
+            description: 'Uploaded folder',
+            parent_folder: c.currentFolder || ''
+        }).then(function (result) {
+
+            if (result.error || !result.folder_sys_id) {
+                c.error = result.error || 'Unable to create folder.';
+                input.value = '';
+                return;
+            }
+
+            // Upload selected files into the created folder
+            _uploadFilesToFolder(files, result.folder_sys_id);
+
+            input.value = '';
+
+        });
+    };
+
+    /* ===================================================
+       CREATE & RENAME FOLDER
+    =================================================== */
+
+    c.openFolderModal = function () {
+        c.newFolderName        = '';
+        c.newFolderDescription = '';
+        c.editFolderTarget     = null;
+        c.showFolderModal      = true;
+    };
+
+    c.openRenameFolder = function (folder) {
+        c.newFolderName        = folder.folder_name;
+        c.newFolderDescription = '';
+        c.editFolderTarget     = folder;
+        c.showFolderModal      = true;
+    };
+
+    c.closeFolderModal = function () {
+        c.showFolderModal      = false;
+        c.editFolderTarget     = null;
+        c.newFolderName        = '';
+        c.newFolderDescription = '';
+    };
+
+    c.onFolderNameKey = function ($event) {
+        if ($event.keyCode === 13) {
+            if (c.editFolderTarget) c.renameFolder();
+            else c.createFolder();
+        }
+    };
+
+    c.createFolder = function () {
+        var name = (c.newFolderName || '').trim();
+        if (!name) { c.error = 'Please enter a folder name.'; return; }
+
+        c.runAction('create_folder', {
+            folder_name:   name,
+            description:   c.newFolderDescription || '',
+            parent_folder: c.currentFolder || ''
+        }).then(function (result) {
+            if (result.error) return;
+            c.closeFolderModal();
+            c.refresh();
+        });
+    };
+
+    c.renameFolder = function () {
+        var name = (c.newFolderName || '').trim();
+        if (!name) { c.error = 'Please enter a folder name.'; return; }
+
+        c.runAction('rename_folder', {
+            sys_id:      c.editFolderTarget.sys_id,
+            folder_name: name
+        }).then(function (result) {
+            if (result.error) return;
+            if (c.currentFolder === c.editFolderTarget.sys_id) {
+                c.currentFolderName = name;
+                c.breadcrumb.forEach(function (b) {
+                    if (b.id === c.editFolderTarget.sys_id) b.name = name;
+                });
+            }
+            c.closeFolderModal();
+            c.refresh();
+        });
+    };
+
+    /* ===================================================
+       SHARE MODAL (Supports Users, Groups & Expiration)
+    =================================================== */
+
+    c.openShare = function (item, type) {
+        c.shareTarget           = item;
+        c.shareType             = type;
+        c.shareRecipientType    = 'user';
+        c.selectedUser          = '';
+        c.selectedGroup         = '';
+        c.sharePermission       = 'Viewer';
+        c.shareExpirationDate   = '';
+        c.userSearchText        = '';
+        c.userSearchError       = '';
+        c.groupSearchText       = '';
+        c.groupSearchError      = '';
+        if (c.data) {
+            c.data.users  = [];
+            c.data.groups = [];
+        }
+        c.showShareModal = true;
+    };
+
+    c.setShareRecipientType = function (type) {
+        c.shareRecipientType = type;
+        c.selectedUser       = '';
+        c.selectedGroup      = '';
+        c.userSearchText     = '';
+        c.groupSearchText    = '';
+        c.userSearchError    = '';
+        c.groupSearchError   = '';
+        if (c.data) {
+            c.data.users  = [];
+            c.data.groups = [];
+        }
+    };
+
+    c.searchUsers = function () {
+        if (c.userSearchTimer) $timeout.cancel(c.userSearchTimer);
+
+        var term = (c.userSearchText || '').trim();
+        c.selectedUser    = '';
+        c.userSearchError = '';
+        if (c.data) c.data.users = [];
+
+        if (term.length < 2) {
+            c.userSearchLoading = false;
+            return;
+        }
+
+        c.userSearchTimer = $timeout(function () {
+            c.userSearchLoading = true;
+            c.server.get({
+                action:      'search_users',
+                search_term: term
+            }).then(function (res) {
+                if (term !== (c.userSearchText || '').trim()) return;
+                var ret = (res && res.data) ? res.data : res;
+                c.data.users        = (ret && ret.users) || [];
+                c.userSearchLoading = false;
+            }, function () {
+                c.userSearchLoading = false;
+                c.userSearchError   = 'Unable to search users.';
+            });
+        }, 300);
+    };
+
+    c.searchGroups = function () {
+        if (c.groupSearchTimer) $timeout.cancel(c.groupSearchTimer);
+
+        var term = (c.groupSearchText || '').trim();
+        c.selectedGroup    = '';
+        c.groupSearchError = '';
+        if (c.data) c.data.groups = [];
+
+        if (term.length < 2) {
+            c.groupSearchLoading = false;
+            return;
+        }
+
+        c.groupSearchTimer = $timeout(function () {
+            c.groupSearchLoading = true;
+            c.server.get({
+                action:      'search_groups',
+                search_term: term
+            }).then(function (res) {
+                if (term !== (c.groupSearchText || '').trim()) return;
+                var ret = (res && res.data) ? res.data : res;
+                c.data.groups        = (ret && ret.groups) || [];
+                c.groupSearchLoading = false;
+            }, function () {
+                c.groupSearchLoading = false;
+                c.groupSearchError   = 'Unable to search groups.';
+            });
+        }, 300);
+    };
+
+    c.shareItem = function () {
+        if (!c.shareTarget) {
+            c.error = 'No item selected to share.';
+            return;
+        }
+
+        if (c.shareRecipientType === 'user' && !c.selectedUser) {
+            c.error = 'Please select a user to share with.';
+            return;
+        }
+
+        if (c.shareRecipientType === 'group' && !c.selectedGroup) {
+            c.error = 'Please select a group to share with.';
+            return;
+        }
+
+        c.runAction('share', {
+            sys_id:          c.shareTarget.sys_id,
+            type:            c.shareType,
+            recipient_type:  c.shareRecipientType,
+            user_id:         c.selectedUser,
+            group_id:        c.selectedGroup,
+            permission:      c.sharePermission,
+            expiration_date: c.shareExpirationDate || ''
+        }).then(function (result) {
+            if (result.error) return;
+            c.showShareModal = false;
+            c.shareTarget    = null;
+            c.refresh();
+        });
+    };
+
+    /* ===================================================
+       EDIT FILE DESCRIPTION
+    =================================================== */
+
+    c.openEditFile = function (file) {
+        c.editFileTarget      = file;
+        c.editFileDescription = file.description || '';
+        c.showEditFileModal   = true;
+    };
+
+    c.saveEditFile = function () {
+        if (!c.editFileTarget) return;
+        c.runAction('update_file', {
+            sys_id:      c.editFileTarget.sys_id,
+            description: c.editFileDescription
+        }).then(function (result) {
+            if (!result.error) {
+                c.showEditFileModal = false;
+                c.editFileTarget    = null;
+                c.refresh();
+            }
+        });
+    };
+
+    /* ===================================================
+       CONFIRMATION & DELETION HELPERS
+    =================================================== */
+
+    function _confirm(opts) {
+        c.confirmModal = {
+            show:         true,
+            title:        opts.title        || 'Are you sure?',
+            message:      opts.message      || '',
+            confirmLabel: opts.confirmLabel || 'Confirm',
+            danger:       opts.danger       !== false,
+            icon:         opts.icon         || 'fa-check',
+            onConfirm:    opts.onConfirm    || angular.noop
+        };
+    }
+
+    c.confirmDeleteFile = function (file) {
+        _confirm({
+            title:        'Move to Recycle Bin',
+            message:      'Move "' + file.filename + '" to the Recycle Bin?',
+            confirmLabel: 'Move to Bin',
+            icon:         'fa-trash',
+            onConfirm:    function () { c.deleteFile(file); }
+        });
+    };
+
+    c.confirmDeleteFolder = function (folder) {
+        _confirm({
+            title:        'Move Folder to Recycle Bin',
+            message:      'Move folder "' + folder.folder_name + '" to the Recycle Bin? Note: All subfolders and files inside must be removed or moved first.',
+            confirmLabel: 'Move to Bin',
+            icon:         'fa-trash',
+            onConfirm:    function () { c.deleteFolder(folder); }
+        });
+    };
+
+    c.confirmPermanentDeleteFile = function (file) {
+        _confirm({
+            title:        'Delete File Permanently',
+            message:      'Permanently delete "' + file.filename + '"? This action CANNOT be undone.',
+            confirmLabel: 'Delete Permanently',
+            icon:         'fa-times',
+            danger:       true,
+            onConfirm:    function () { c.deleteFilePermanent(file); }
+        });
+    };
+
+    c.confirmPermanentDeleteFolder = function (folder) {
+        _confirm({
+            title:        'Delete Folder Permanently',
+            message:      'Permanently delete folder "' + folder.folder_name + '"? This action CANNOT be undone.',
+            confirmLabel: 'Delete Permanently',
+            icon:         'fa-times',
+            danger:       true,
+            onConfirm:    function () { c.deleteFolderPermanent(folder); }
+        });
+    };
+
+    c.confirmDeleteSelected = function () {
+        var count = c.selectedCount();
+        _confirm({
+            title:        'Delete Selected Files',
+            message:      'Move ' + count + ' selected file(s) to the Recycle Bin?',
+            confirmLabel: 'Move to Bin',
+            icon:         'fa-trash',
+            onConfirm:    function () {
+                var selected = (c.data.files || []).filter(function (f) { return f._selected; });
+                _deleteBatch(selected);
+            }
+        });
+    };
+
+    c.confirmEmptyBin = function () {
+        _confirm({
+            title:        'Empty Recycle Bin',
+            message:      'Permanently delete all files and folders in the Recycle Bin? This action CANNOT be undone.',
+            confirmLabel: 'Empty Bin',
+            icon:         'fa-trash',
+            danger:       true,
+            onConfirm:    function () { c.emptyBin(); }
+        });
+    };
+
+    function _deleteBatch(files) {
+        if (!files.length) return;
+        var idx = 0;
+        function next() {
+            if (idx >= files.length) { c.refresh(); return; }
+            var f = files[idx++];
+            c.runAction('delete_file', { sys_id: f.sys_id }).then(next);
+        }
+        next();
+    }
+
+    /* ===================================================
+       CRUD ACTIONS
+    =================================================== */
+
+    c.deleteFile = function (file) {
+        c.runAction('delete_file', { sys_id: file.sys_id })
+            .then(function (r) { if (!r.error) c.refresh(); });
+    };
+
+    c.deleteFolder = function (folder) {
+        c.runAction('delete_folder', { sys_id: folder.sys_id })
+            .then(function (r) { if (!r.error) c.refresh(); });
+    };
+
+    c.restoreFile = function (file) {
+        c.runAction('restore_file', { sys_id: file.sys_id })
+            .then(function (r) { if (!r.error) c.refresh(); });
+    };
+
+    c.restoreFolder = function (folder) {
+        c.runAction('restore_folder', { sys_id: folder.sys_id })
+            .then(function (r) { if (!r.error) c.refresh(); });
+    };
+
+    c.deleteFilePermanent = function (file) {
+        c.runAction('delete_file_permanent', { sys_id: file.sys_id })
+            .then(function (r) { if (!r.error) c.refresh(); });
+    };
+
+    c.deleteFolderPermanent = function (folder) {
+        c.runAction('delete_folder_permanent', { sys_id: folder.sys_id })
+            .then(function (r) { if (!r.error) c.refresh(); });
+    };
+
+    c.emptyBin = function () {
+        c.runAction('empty_bin').then(function (r) {
+            if (!r.error) c.refresh();
+        });
+    };
+
+    /* ===================================================
+       DOWNLOAD & PREVIEW
+    =================================================== */
+
+    c.downloadFile = function (file) {
+        if (!file || !file.attachment_id) {
+            c.error = 'Attachment not found.';
+            return;
+        }
+        window.open(
+            '/sys_attachment.do?sys_id=' + encodeURIComponent(file.attachment_id),
+            '_blank'
+        );
+    };
+
+    c.downloadSelected = function () {
+        var selected = (c.data.files || []).filter(function (f) { return f._selected; });
+        selected.forEach(function (f, i) {
+            $timeout(function () { c.downloadFile(f); }, i * 350);
+        });
+    };
+
+    c.isImage = function (file) {
+        if (!file) return false;
+        var ext  = (file.file_extension || '').toLowerCase();
+        var type = (file.content_type   || '').toLowerCase();
+        return type.indexOf('image/') === 0 ||
+            ['png','jpg','jpeg','gif','webp','bmp','svg'].indexOf(ext) !== -1;
+    };
+
+    c.preview = function (file) {
+        if (!file || !file.attachment_id) {
+            c.error = 'Attachment not found.';
+            return;
+        }
+        c.previewFile = file;
+    };
+
+    c.closePreview = function () {
+        c.previewFile = null;
+    };
+
+    /* ===================================================
+       FILE TYPE ICONS
+    =================================================== */
+
+    var _iconMap = {
+        png: 'fa fa-file-image-o', jpg: 'fa fa-file-image-o',
+        jpeg:'fa fa-file-image-o', gif: 'fa fa-file-image-o',
+        webp:'fa fa-file-image-o', bmp: 'fa fa-file-image-o',
+        svg: 'fa fa-file-image-o',
+        pdf: 'fa fa-file-pdf-o',
+        doc: 'fa fa-file-word-o', docx:'fa fa-file-word-o', odt:'fa fa-file-word-o',
+        xls: 'fa fa-file-excel-o', xlsx:'fa fa-file-excel-o', csv:'fa fa-file-excel-o',
+        ppt: 'fa fa-file-powerpoint-o', pptx:'fa fa-file-powerpoint-o',
+        zip: 'fa fa-file-zip-o', rar: 'fa fa-file-zip-o', '7z':'fa fa-file-zip-o',
+        tar: 'fa fa-file-zip-o', gz:  'fa fa-file-zip-o',
+        mp3: 'fa fa-file-audio-o', wav: 'fa fa-file-audio-o',
+        mp4: 'fa fa-file-video-o', avi: 'fa fa-file-video-o', mov:'fa fa-file-video-o',
+        js:  'fa fa-file-code-o', html:'fa fa-file-code-o', css:'fa fa-file-code-o',
+        json:'fa fa-file-code-o', py:  'fa fa-file-code-o',
+        txt: 'fa fa-file-text-o', md:  'fa fa-file-text-o'
+    };
+
+    var _colorMap = {
+        'fa fa-file-image-o':      'fm-icon-image',
+        'fa fa-file-pdf-o':        'fm-icon-pdf',
+        'fa fa-file-word-o':       'fm-icon-word',
+        'fa fa-file-excel-o':      'fm-icon-excel',
+        'fa fa-file-powerpoint-o': 'fm-icon-ppt',
+        'fa fa-file-zip-o':        'fm-icon-zip',
+        'fa fa-file-audio-o':      'fm-icon-audio',
+        'fa fa-file-video-o':      'fm-icon-video',
+        'fa fa-file-code-o':       'fm-icon-code',
+        'fa fa-file-text-o':       'fm-icon-text'
+    };
+
+    c.getFileIcon = function (file) {
+        if (!file) return 'fa fa-file-o';
+        var ext = (file.file_extension || '').toLowerCase();
+        return _iconMap[ext] || 'fa fa-file-o';
+    };
+
+    c.getFileIconColor = function (file) {
+        var icon = c.getFileIcon(file);
+        return _colorMap[icon] || 'fm-icon-default';
+    };
+
+    /* ===================================================
+       SELECTION HELPERS
+    =================================================== */
+
+    c.selectedCount = function () {
+        var list = c.view === 'allfiles' ? (c.data.files || []) : c.filesInCurrentFolder();
+        return list.filter(function (f) { return f._selected; }).length;
+    };
+
+    c.toggleSelectAll = function () {
+        c.filesInCurrentFolder().forEach(function (f) {
+            f._selected = c.allSelected;
+        });
+    };
+
+    c.toggleSelectAllGlobal = function () {
+        c.allFilesFiltered().forEach(function (f) {
+            f._selected = c.allSelected;
+        });
+    };
+
+    c.onFileSelect = function () {
+        var list = c.view === 'allfiles' ? c.allFilesFiltered() : c.filesInCurrentFolder();
+        c.allSelected = list.length > 0 && list.every(function (f) {
+            return f._selected;
+        });
+    };
+
+    c.clearSelection = function () {
+        (c.data.files || []).forEach(function (f) { f._selected = false; });
+        (c.data.sharedFiles || []).forEach(function (f) { f._selected = false; });
+        c.allSelected = false;
+    };
+
+    /* ===================================================
+       RIGHT-CLICK CONTEXT MENU
+    =================================================== */
+
+    c.openContextMenu = function (e, item, type) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // No context menu in picker mode
+        if (c.pickerMode) return;
+
+        var x = e.clientX || 0;
+        var y = e.clientY || 0;
+
+        // Prevent overflow at window boundaries
+        var menuWidth  = 180;
+        var menuHeight = 220;
+        if (x + menuWidth > window.innerWidth)   x = window.innerWidth - menuWidth - 10;
+        if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+
+        c.contextMenu = {
+            show: true,
+            x: x,
+            y: y,
+            item: item,
+            type: type
+        };
+    };
+
+    c.closeContextMenu = function () {
+        if (c.contextMenu.show) {
+            c.contextMenu.show = false;
+            c.contextMenu.item = null;
+        }
+    };
+
+    /* ===================================================
+       FORMAT BYTES
+    =================================================== */
+
+    c.formatBytes = function (bytes) {
+        bytes = parseInt(bytes, 10) || 0;
+        if (bytes === 0)         return '0 B';
+        if (bytes < 1024)        return bytes + ' B';
+        if (bytes < 1048576)     return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1073741824)  return (bytes / 1048576).toFixed(1) + ' MB';
+        return (bytes / 1073741824).toFixed(2) + ' GB';
+    };
+
+    /* ===================================================
+       KEYBOARD SHORTCUTS
+    =================================================== */
+
+    c.onKeyDown = function ($event) {
+        if ($event.keyCode === 27) { // ESC
+            c.closeContextMenu();
+            if (c.previewFile)            { c.closePreview();                 return; }
+            if (c.confirmModal.show)      { c.confirmModal.show = false;      return; }
+            if (c.showEditFileModal)      { c.showEditFileModal = false;      return; }
+            if (c.showShareModal)         { c.showShareModal = false;         return; }
+            if (c.showFolderModal)        { c.closeFolderModal();             return; }
+            if (c.showUploadFolderPicker) { c.showUploadFolderPicker = false; return; }
+        }
+    };
+
+    /* ===================================================
+       PRIVATE HELPERS
+    =================================================== */
+
+    function _clearAlerts() {
+        c.message = '';
+        c.error   = '';
+    }
+
+    function _clearSelection() {
+        c.allSelected = false;
+        (c.data && c.data.files || []).forEach(function (f) {
+            f._selected = false;
+        });
+        (c.data && c.data.sharedFiles || []).forEach(function (f) {
+            f._selected = false;
+        });
+    }
+};
+
+/* =====================================================
+   LINK FUNCTION
+   1. Drag & drop file uploads on [fm-drop-zone]
+   2. Right-click contextmenu delegation on [fm-context-item]
+===================================================== */
+api.link = function ($scope, element) {
+    var rootEl = element[0];
+
+    // Right-click delegation
+    rootEl.addEventListener('contextmenu', function (e) {
+        var target = e.target.closest('[fm-context-item]');
+        if (target) {
+            e.preventDefault();
+            var scope = angular.element(target).scope();
+            if (scope && scope.c) {
+                var item = scope.file || scope.folder;
+                var type = target.getAttribute('fm-context-type');
+                if (item && type) {
+                    $scope.$apply(function () {
+                        scope.c.openContextMenu(e, item, type);
+                    });
+                }
+            }
+        }
+    });
+
+    // Drag-and-drop support
+    function prevent(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    function safeApply(fn) {
+        if ($scope.$$phase || ($scope.$root && $scope.$root.$$phase)) {
+            if (fn) fn();
+        } else {
+            $scope.$apply(fn);
+        }
+    }
+
+    rootEl.addEventListener('dragenter', function (e) {
+        if (e.target.closest('[fm-drop-zone]')) {
+            prevent(e);
+            safeApply(function () { $scope.c.dragOver = true; });
+        }
+    });
+
+    rootEl.addEventListener('dragover', function (e) {
+        if (e.target.closest('[fm-drop-zone]')) {
+            prevent(e);
+            e.dataTransfer.dropEffect = 'copy';
+            safeApply(function () { $scope.c.dragOver = true; });
+        }
+    });
+
+    rootEl.addEventListener('dragleave', function (e) {
+        var dropZone = e.target.closest('[fm-drop-zone]');
+        if (dropZone && !dropZone.contains(e.relatedTarget)) {
+            prevent(e);
+            safeApply(function () { $scope.c.dragOver = false; });
+        }
+    });
+
+    rootEl.addEventListener('drop', function (e) {
+        var dropZone = e.target.closest('[fm-drop-zone]');
+        if (dropZone) {
+            prevent(e);
+            safeApply(function () { $scope.c.dragOver = false; });
+
+            var files = e.dataTransfer && e.dataTransfer.files;
+            if (files && files.length && $scope.c && $scope.c.currentFolder) {
+                // Upload dropped files into current active folder
+                $scope.c.onDirectFilesSelected({ files: files });
+            }
+        }
+    });
+};]]></client_script>
+        <controller_as>c</controller_as>
+        <css>/* =========================================
+   FILE MANAGER — CLEAN MODERN SAAS INTERFACE
+   ServiceNow Portal Widget
+========================================= */
+/* ---- Picker mode: hide management actions ---- */
+.fm-picker .fm-sidebar-new,
+.fm-picker .fm-toolbar-actions,
+.fm-picker .fm-card-menu,
+.fm-picker .fm-context-menu,
+.fm-picker .fm-empty .fm-button,
+.fm-picker .fm-actions button[title="Share"],
+.fm-picker .fm-actions button[title="Delete"],
+.fm-picker .fm-actions button[title="Edit Description"] {
+    display: none !important;
+}
+
+.fm-picker .fm-table tbody tr {
+    cursor: pointer;
+    user-select: none;
+}
+/* --- RESET &amp; MAIN CONTAINER --- */
+.fm-app {
+    display: flex;
+    width: 100%;
+    min-height: 750px;
+    background: #f5f7fb;
+    color: #263445;
+    font-family: Arial, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    position: relative;
+    box-sizing: border-box;
+}
+
+.fm-app * {
+    box-sizing: border-box;
+}
+
+/* =========================================
+   SIDEBAR
+========================================= */
+
+.fm-sidebar {
+    width: 235px;
+    min-width: 235px;
+    background: #ffffff;
+    border-right: 1px solid #e7ebf0;
+    display: flex;
+    flex-direction: column;
+    min-height: 750px;
+    flex-shrink: 0;
+}
+
+.fm-logo {
+    height: 72px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 22px;
+    border-bottom: 1px solid #edf0f4;
+    font-size: 18px;
+    font-weight: 700;
+    color: #263445;
+    cursor: pointer;
+    user-select: none;
+}
+
+.fm-logo-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #e9f1ff;
+    color: #3478df;
+    font-size: 19px;
+    flex-shrink: 0;
+}
+
+.fm-menu {
+    padding: 20px 12px;
+    flex: 1;
+}
+
+.fm-menu-label {
+    color: #9aa5b3;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 0 12px;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+}
+
+.fm-menu-spaced {
+    margin-top: 24px;
+}
+
+.fm-menu a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 42px;
+    padding: 0 12px;
+    margin-bottom: 4px;
+    border-radius: 7px;
+    color: #657386;
+    font-size: 13px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    user-select: none;
+}
+
+.fm-menu a i {
+    width: 18px;
+    font-size: 14px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+.fm-menu a:hover {
+    background: #f0f5ff;
+    color: #3478df;
+}
+
+.fm-menu a.active {
+    background: #eaf1ff;
+    color: #3478df;
+    font-weight: 600;
+}
+
+.fm-badge {
+    margin-left: auto;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: #e84444;
+    color: #ffffff;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.fm-count-pill {
+    margin-left: auto;
+    padding: 2px 7px;
+    border-radius: 10px;
+    background: #edf1f6;
+    color: #68778a;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.fm-sidebar-footer {
+    padding: 16px 20px;
+    border-top: 1px solid #edf0f4;
+    color: #8491a2;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fm-sidebar-footer i {
+    color: #3478df;
+}
+
+/* NEW BUTTON IN SIDEBAR */
+
+.fm-sidebar-new {
+  display: block;
+  margin: 18px 15px 20px;
+  width: auto;
+}
+
+.fm-sidebar-new .fm-new-btn {
+  width: 100%;
+  height: 40px;
+  justify-content: center;
+  border-radius: 7px;
+  font-size: 13px;
+}
+
+.fm-sidebar-dropdown {
+  width: 100%;
+  top: calc(100% + 6px);
+  left: 0;
+  right: auto;
+  box-sizing: border-box;
+  z-index: 9999;
+}
+/* NEW DROPDOWN MENU */
+.fm-new-dropdown {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    width: 230px;
+    background: #ffffff;
+    border: 1px solid #e1e7ef;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+    padding: 6px;
+    z-index: 9999;
+}
+
+/* DROPDOWN OPTION */
+.fm-new-option {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* HOVER EFFECT */
+.fm-new-option:hover {
+    background: #f0f5ff;
+}
+
+/* OPTION ICON */
+.fm-new-option &gt; i {
+    width: 22px;
+    min-width: 22px;
+    font-size: 19px;
+    color: #3478df;
+    text-align: center;
+}
+
+/* TEXT CONTAINER */
+.fm-new-option span {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* OPTION TITLE */
+.fm-new-option strong {
+    font-size: 13px;
+    font-weight: 600;
+    color: #344256;
+}
+
+/* OPTION DESCRIPTION */
+.fm-new-option small {
+    font-size: 11px;
+    font-weight: 400;
+    color: #8995a5;
+    line-height: 15px;
+}
+
+/* SIDEBAR DROPDOWN POSITION */
+.fm-sidebar-new {
+    position: relative;
+    margin: 18px 15px 20px;
+}
+
+.fm-sidebar-dropdown {
+    width: 100%;
+    left: 0;
+    right: auto;
+    box-sizing: border-box;
+}
+
+/* DROPDOWN OPTION SEPARATOR */
+.fm-new-option + .fm-new-option {
+    border-top: 1px solid #f0f2f5;
+    border-radius: 0 0 6px 6px;
+}
+
+/* NEW BUTTON */
+.fm-new-btn {
+    width: 100%;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 9px;
+    border-radius: 7px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* =========================================
+   MAIN CONTENT AREA
+========================================= */
+
+.fm-main {
+    flex: 1;
+    min-width: 0;
+    padding: 24px 30px;
+    background: #f5f7fb;
+    display: flex;
+    flex-direction: column;
+}
+
+/* =========================================
+   TOP HEADER
+========================================= */
+
+.fm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 60px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.fm-header-title h2 {
+    margin: 0 0 4px;
+    font-size: 22px;
+    font-weight: 700;
+    color: #263445;
+}
+
+.fm-header-title p {
+    margin: 0;
+    color: #8a96a5;
+    font-size: 12px;
+}
+
+.fm-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+}
+
+.fm-header-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 290px;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid #e0e6ed;
+    border-radius: 7px;
+    background: #ffffff;
+    transition: border-color 0.15s;
+}
+
+.fm-header-search:focus-within {
+    border-color: #78a5e8;
+    box-shadow: 0 0 0 2px rgba(52, 120, 223, 0.08);
+}
+
+.fm-header-search i {
+    color: #98a4b2;
+    flex-shrink: 0;
+}
+
+.fm-header-search input {
+    width: 100%;
+    min-width: 0;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent;
+    font-size: 12px;
+}
+
+.fm-search-clear {
+    border: none;
+    background: transparent;
+    color: #a0aec0;
+    cursor: pointer;
+    padding: 0;
+    display: flex;
+    align-items: center;
+}
+
+.fm-search-clear:hover {
+    color: #4a5568;
+}
+
+.fm-refresh-btn {
+    width: 40px;
+    height: 40px;
+    border: 1px solid #e0e6ed;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #657386;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.fm-refresh-btn:hover {
+    color: #3478df;
+    background: #f0f5ff;
+    border-color: #b8cff4;
+}
+
+.fm-refresh-btn.fm-spinning i {
+    animation: fm-spin 0.8s linear infinite;
+}
+
+@keyframes fm-spin {
+    to { transform: rotate(360deg); }
+}
+
+/* =========================================
+   BREADCRUMB
+========================================= */
+
+.fm-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: #8a96a5;
+    flex-wrap: wrap;
+}
+
+.fm-breadcrumb a {
+    color: #3478df;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.fm-breadcrumb a:hover {
+    text-decoration: underline;
+}
+
+.fm-breadcrumb-sep {
+    color: #c4cfdb;
+    font-size: 10px;
+}
+
+.fm-breadcrumb-current {
+    color: #263445;
+    font-weight: 600;
+}
+
+/* =========================================
+   BUTTONS
+========================================= */
+
+.fm-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 7px 14px;
+    border: 1px solid #dfe5ed;
+    border-radius: 6px;
+    background: #ffffff;
+    color: #536174;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    position: relative;
+}
+
+.fm-button:hover {
+    background: #f5f8fc;
+    color: #3478df;
+    border-color: #b8cff4;
+}
+
+.fm-button.fm-primary {
+    color: #ffffff;
+    background: #3478df;
+    border-color: #3478df;
+}
+
+.fm-button.fm-primary:hover {
+    background: #2867c5;
+    color: #ffffff;
+}
+
+.fm-button.fm-danger {
+    color: #c24c4c;
+    background: #fff0f0;
+    border-color: #f4dada;
+}
+
+.fm-button.fm-danger:hover {
+    background: #ffe0e0;
+    border-color: #e8b8b8;
+}
+
+.fm-button:disabled,
+.fm-button[disabled],
+.fm-disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.fm-back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    margin-bottom: 10px;
+    border: none;
+    background: transparent;
+    color: #3478df;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.fm-back-btn:hover {
+    text-decoration: underline;
+}
+
+.fm-restore-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 5px;
+    background: #effaf3;
+    color: #268a57;
+    border: 1px solid #ccebd8;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    width: auto !important;
+    min-width: auto !important;
+}
+
+.fm-restore-btn:hover {
+    background: #e2f6e9;
+    color: #197344;
+    border-color: #a3dcba;
+}
+
+.fm-perm-delete-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 5px;
+    background: #fff0f0;
+    color: #c24c4c;
+    border: 1px solid #f4dada;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    width: auto !important;
+    min-width: auto !important;
+}
+
+.fm-perm-delete-btn:hover {
+    background: #ffe0e0;
+    color: #a72828;
+    border-color: #e8b8b8;
+}
+
+.fm-recycle-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+
+/* =========================================
+   SECTIONS AND TOOLBARS
+========================================= */
+
+.fm-content {
+    width: 100%;
+}
+
+.fm-section {
+    margin-top: 26px;
+}
+
+.fm-section-header,
+.fm-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+
+.fm-section-header h3,
+.fm-toolbar h3 {
+    margin: 0 0 4px;
+    font-size: 17px;
+    font-weight: 700;
+    color: #263445;
+}
+
+.fm-section-header p,
+.fm-toolbar p {
+    margin: 0;
+    font-size: 12px;
+    color: #8a96a5;
+}
+
+.fm-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.fm-subsection {
+    margin-top: 24px;
+}
+
+.fm-subsection-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+
+.fm-subsection h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin: 0 0 14px;
+    color: #344256;
+}
+
+/* =========================================
+   WELCOME SECTION
+========================================= */
+
+.fm-welcome {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 135px;
+    padding: 24px 28px;
+    border-radius: 11px;
+    background: linear-gradient(110deg, #eaf2ff, #f4f7ff);
+    border: 1px solid #e2ebfc;
+}
+
+.fm-welcome h3 {
+    margin: 0 0 8px;
+    color: #263e64;
+    font-size: 21px;
+    font-weight: 700;
+}
+
+.fm-welcome p {
+    margin: 0;
+    color: #7588a4;
+    font-size: 13px;
+}
+
+.fm-welcome-icon {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #3478df;
+    font-size: 30px;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(52, 120, 223, 0.12);
+}
+
+/* =========================================
+   STATISTICS CARDS
+========================================= */
+
+.fm-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin-top: 20px;
+}
+
+.fm-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    min-height: 90px;
+    padding: 16px;
+    border: 1px solid #e9edf2;
+    border-radius: 9px;
+    background: #ffffff;
+    transition: all 0.18s ease;
+    cursor: default;
+}
+
+.fm-stat-card.fm-clickable {
+    cursor: pointer;
+}
+
+.fm-stat-card.fm-clickable:hover {
+    border-color: #b8cff4;
+    box-shadow: 0 4px 14px rgba(37, 75, 125, 0.08);
+}
+
+.fm-stat-card span {
+    display: block;
+    color: #8793a3;
+    font-size: 11px;
+    margin-bottom: 6px;
+}
+
+.fm-stat-card strong {
+    display: block;
+    color: #263445;
+    font-size: 22px;
+}
+
+.fm-stat-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    border-radius: 9px;
+    font-size: 17px;
+}
+
+.fm-stat-icon.blue   { background: #eaf1ff; color: #3478df; }
+.fm-stat-icon.purple { background: #f1eaff; color: #8856cf; }
+.fm-stat-icon.green  { background: #e8f8ef; color: #28a365; }
+.fm-stat-icon.orange { background: #fff3e0; color: #e07c00; }
+
+/* =========================================
+   FOLDER CARDS &amp; GRID
+========================================= */
+
+.fm-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 13px;
+}
+
+.fm-folder-card {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 80px;
+    padding: 12px 14px;
+    border: 1px solid #e7ebf1;
+    border-radius: 9px;
+    background: #ffffff;
+    transition: all 0.18s ease;
+}
+
+.fm-folder-card:hover {
+    border-color: #b8cff4;
+    box-shadow: 0 4px 14px rgba(37, 75, 125, 0.08);
+}
+
+.fm-folder-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+    min-width: 0;
+    cursor: pointer;
+}
+
+.fm-folder-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    border-radius: 9px;
+    background: #fff4dc;
+    color: #e6a52c;
+    font-size: 20px;
+}
+
+.fm-card-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    gap: 4px;
+}
+
+.fm-card-info strong {
+    color: #344256;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fm-card-info span {
+    color: #95a0ad;
+    font-size: 11px;
+}
+
+.fm-card-arrow {
+    color: #aab4c0;
+    font-size: 17px;
+    flex-shrink: 0;
+}
+
+.fm-card-menu {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.fm-card-menu button {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: #7e8a99;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.fm-card-menu button:hover {
+    background: #f0f5ff;
+    color: #3478df;
+}
+
+/* =========================================
+   FILE TABLE
+========================================= */
+
+.fm-table-wrap {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid #e8edf2;
+    border-radius: 8px;
+    background: #ffffff;
+}
+
+.fm-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 580px;
+}
+
+.fm-table th {
+    padding: 12px 16px;
+    text-align: left;
+    background: #f8fafd;
+    border-bottom: 1px solid #e9edf2;
+    color: #8793a3;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.fm-table th.fm-sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+.fm-table th.fm-sortable:hover {
+    color: #3478df;
+}
+
+.fm-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid #eef1f5;
+    color: #667386;
+    font-size: 12px;
+    vertical-align: middle;
+}
+
+.fm-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.fm-table tbody tr:hover {
+    background: #fafcff;
+}
+
+.fm-file-name {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #344256;
+    font-weight: 600;
+    min-width: 0;
+}
+
+.fm-file-name span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 240px;
+}
+
+/* File type icon colors */
+.fm-file-icon { font-size: 16px; flex-shrink: 0; }
+.fm-icon-image  { color: #34a853; }
+.fm-icon-pdf    { color: #e84444; }
+.fm-icon-word   { color: #2b7cd3; }
+.fm-icon-excel  { color: #1e7145; }
+.fm-icon-ppt    { color: #d04425; }
+.fm-icon-zip    { color: #a1701a; }
+.fm-icon-audio  { color: #0d6efd; }
+.fm-icon-video  { color: #dc3545; }
+.fm-icon-code   { color: #6f42c1; }
+.fm-icon-text   { color: #6c757d; }
+.fm-icon-default{ color: #6889bd; }
+
+/* Permission badges */
+.fm-permission {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.fm-perm-owner  { background: #fff3e0; color: #e07c00; }
+.fm-perm-editor { background: #e8f8ef; color: #28a365; }
+.fm-perm-viewer { background: #eef4ff; color: #3478df; }
+
+/* Folder link chip in All Files view */
+.fm-folder-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    background: #fff8e6;
+    color: #c78612;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    transition: background 0.15s;
+}
+
+.fm-folder-chip:hover {
+    background: #ffeed0;
+    text-decoration: underline;
+}
+
+.fm-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.fm-actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 29px;
+    height: 29px;
+    border: none;
+    border-radius: 5px;
+    background: transparent;
+    color: #718096;
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+}
+
+.fm-actions button.fm-restore-btn,
+.fm-actions button.fm-perm-delete-btn {
+    width: auto !important;
+    height: 28px !important;
+}
+
+.fm-actions button:hover {
+    background: #edf3ff;
+    color: #3478df;
+}
+
+.fm-actions button.fm-del-btn:hover {
+    background: #fff0f0;
+    color: #c24c4c;
+}
+
+/* =========================================
+   DRAG AND DROP ZONE
+========================================= */
+
+.fm-drop-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    height: 60px;
+    margin-bottom: 16px;
+    border: 2px dashed #cdd6e2;
+    border-radius: 8px;
+    color: #8b99a9;
+    font-size: 12px;
+    transition: all 0.2s ease;
+}
+
+.fm-drop-zone i {
+    font-size: 22px;
+    color: #8ba0bd;
+}
+
+.fm-drop-zone.fm-drag-over {
+    border-color: #3478df;
+    background: #f0f5ff;
+    color: #3478df;
+}
+
+.fm-drop-zone.fm-drag-over i {
+    color: #3478df;
+}
+
+/* =========================================
+   UPLOAD PROGRESS
+========================================= */
+
+.fm-upload-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 10px 14px;
+    background: #ffffff;
+    border: 1px solid #e0e6ed;
+    border-radius: 7px;
+    font-size: 12px;
+    color: #536174;
+}
+
+.fm-upload-bar {
+    flex: 1;
+    height: 6px;
+    background: #eef2f7;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.fm-upload-fill {
+    height: 100%;
+    background: #3478df;
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+/* =========================================
+   EMPTY STATES
+========================================= */
+
+.fm-empty {
+    padding: 38px 16px;
+    text-align: center;
+    color: #98a4b2;
+}
+
+.fm-empty &gt; i {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 34px;
+    color: #c4cfdb;
+}
+
+.fm-empty p {
+    margin: 0 0 12px;
+    font-size: 12px;
+}
+
+/* =========================================
+   ALERT MESSAGES
+========================================= */
+
+.fm-alert {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 11px 14px;
+    margin-bottom: 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    animation: fm-fadein 0.2s ease;
+}
+
+.fm-alert span {
+    flex: 1;
+}
+
+.fm-alert button {
+    margin-left: auto;
+    border: none;
+    background: transparent;
+    font-size: 19px;
+    line-height: 1;
+    cursor: pointer;
+    color: inherit;
+    opacity: 0.6;
+}
+
+.fm-alert button:hover {
+    opacity: 1;
+}
+
+.fm-alert-success {
+    background: #eaf8ef;
+    color: #25844d;
+    border: 1px solid #d5efdf;
+}
+
+.fm-alert-error {
+    background: #fff0f0;
+    color: #c24c4c;
+    border: 1px solid #f4dada;
+}
+
+@keyframes fm-fadein {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* =========================================
+   STORAGE
+========================================= */
+
+.fm-storage-card {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 22px 26px;
+    border: 1px solid #e6ecf3;
+    border-radius: 9px;
+    background: #ffffff;
+}
+
+.fm-storage-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 10px;
+    background: #eaf1ff;
+    color: #3478df;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.fm-storage-card h3 {
+    margin: 0 0 5px;
+    font-size: 16px;
+    color: #344256;
+}
+
+.fm-storage-card p {
+    margin: 0;
+    color: #8a96a5;
+    font-size: 12px;
+}
+
+.fm-storage-note {
+    margin-top: 18px;
+    color: #8a96a5;
+    font-size: 11px;
+    line-height: 1.6;
+}
+
+.fm-ext-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: #f0f4f8;
+    color: #536174;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* =========================================
+   MODALS
+========================================= */
+
+.fm-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(25, 38, 55, 0.48);
+    animation: fm-fadein 0.2s ease;
+}
+
+.fm-modal {
+    width: 100%;
+    max-width: 440px;
+    max-height: 90vh;
+    overflow-y: auto;
+    padding: 24px;
+    border-radius: 11px;
+    background: #ffffff;
+    box-shadow: 0 15px 50px rgba(0, 0, 0, 0.16);
+    animation: fm-modal-in 0.22s ease;
+}
+
+@keyframes fm-modal-in {
+    from { opacity: 0; transform: scale(0.96) translateY(6px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.fm-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
+
+.fm-modal-header h3 {
+    margin: 0;
+    color: #263445;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.fm-modal-header button {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 5px;
+    background: #f1f4f8;
+    color: #68778a;
+    font-size: 21px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.fm-modal-header button:hover {
+    background: #e5ebf2;
+    color: #263445;
+}
+
+.fm-modal label {
+    display: block;
+    margin: 14px 0 6px;
+    color: #526174;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.fm-modal input[type="text"],
+.fm-modal select,
+.fm-modal textarea {
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 11px;
+    border: 1px solid #dce3eb;
+    border-radius: 6px;
+    outline: none;
+    background: #ffffff;
+    color: #344256;
+    font-size: 12px;
+    box-shadow: none;
+    transition: border-color 0.15s;
+}
+
+.fm-modal input:focus,
+.fm-modal select:focus,
+.fm-modal textarea:focus {
+    border-color: #78a5e8;
+    box-shadow: 0 0 0 2px rgba(52, 120, 223, 0.08);
+}
+
+.fm-modal textarea {
+    resize: vertical;
+}
+
+.fm-char-count {
+    text-align: right;
+    font-size: 10px;
+    color: #9aa5b3;
+    margin-top: 3px;
+}
+
+.fm-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+    margin-top: 22px;
+}
+
+/* Folder Picker inside Upload Modal */
+.fm-folder-picker-list {
+    max-height: 220px;
+    overflow-y: auto;
+    border: 1px solid #dce3eb;
+    border-radius: 6px;
+    margin-top: 6px;
+    background: #ffffff;
+}
+
+.fm-folder-picker-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f4f8;
+    transition: background 0.12s;
+}
+
+.fm-folder-picker-item:last-child {
+    border-bottom: none;
+}
+
+.fm-folder-picker-item:hover {
+    background: #f5f8fc;
+}
+
+.fm-folder-picker-item.selected {
+    background: #eef4ff;
+    color: #3478df;
+}
+
+.fm-folder-picker-item i.fa-folder {
+    color: #e6a52c;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+
+.fm-folder-picker-name {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fm-folder-picker-perm {
+    font-size: 10px;
+    color: #8b99a9;
+    flex-shrink: 0;
+}
+
+.fm-folder-picker-check {
+    color: #3478df;
+    font-size: 13px;
+    flex-shrink: 0;
+}
+
+.fm-picker-new-link {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #3478df;
+    cursor: pointer;
+    display: inline-block;
+}
+
+.fm-picker-new-link:hover {
+    text-decoration: underline;
+}
+
+/* =========================================
+   SHARE MODAL
+========================================= */
+
+.fm-share-modal {
+    max-width: 480px;
+}
+
+.fm-user-search {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 40px;
+    padding: 0 12px;
+    margin-top: 6px;
+    border: 1px solid #d7dfe8;
+    border-radius: 6px;
+    background: #ffffff;
+}
+
+.fm-user-search i {
+    color: #8291a2;
+    font-size: 13px;
+}
+
+.fm-user-search input {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent;
+    font-size: 12px;
+}
+
+.fm-search-help {
+    margin: 5px 0 12px;
+    color: #8995a2;
+    font-size: 11px;
+}
+
+.fm-user-status {
+    padding: 8px 0;
+    color: #718096;
+    font-size: 12px;
+}
+
+.fm-user-status i {
+    margin-right: 6px;
+}
+
+.fm-user-error {
+    color: #c24c4c;
+}
+
+.fm-user-results {
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid #e0e6ed;
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.fm-user-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f4f8;
+    transition: background 0.12s;
+}
+
+.fm-user-option:last-child {
+    border-bottom: none;
+}
+
+.fm-user-option:hover {
+    background: #f5f8fc;
+}
+
+.fm-user-selected {
+    background: #eef4ff !important;
+}
+
+.fm-user-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #3478df;
+    color: #ffffff;
+    font-size: 12px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.fm-user-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.fm-user-info strong {
+    display: block;
+    font-size: 12px;
+    color: #344256;
+}
+
+.fm-user-info span {
+    display: block;
+    font-size: 10px;
+    color: #8a96a5;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* =========================================
+   CONFIRMATION MODAL
+========================================= */
+
+.fm-confirm-modal {
+    max-width: 400px;
+}
+
+.fm-confirm-text {
+    color: #536174;
+    font-size: 13px;
+    line-height: 1.6;
+    margin: 4px 0 16px;
+}
+
+/* =========================================
+   IMAGE PREVIEW MODAL
+========================================= */
+
+.fm-preview-backdrop {
+    z-index: 10000;
+}
+
+.fm-preview-modal {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 850px;
+    max-height: 90vh;
+    overflow: hidden;
+    border-radius: 10px;
+    background: #ffffff;
+}
+
+.fm-preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    padding: 14px 20px;
+    border-bottom: 1px solid #e9edf2;
+    color: #344256;
+    font-size: 13px;
+}
+
+.fm-preview-header button {
+    width: 30px;
+    height: 30px;
+    border: none;
+    border-radius: 5px;
+    background: #f1f4f8;
+    color: #68778a;
+    font-size: 20px;
+    cursor: pointer;
+}
+
+.fm-preview-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 250px;
+    max-height: 65vh;
+    padding: 20px;
+    overflow: auto;
+    background: #f7f9fc;
+}
+
+.fm-preview-content img {
+    display: block;
+    max-width: 100%;
+    max-height: 60vh;
+    object-fit: contain;
+}
+
+.fm-preview-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 12px 20px;
+    border-top: 1px solid #e9edf2;
+}
+
+/* =========================================
+   RIGHT-CLICK CONTEXT MENU
+========================================= */
+
+.fm-context-menu {
+    position: fixed;
+    z-index: 99999;
+    min-width: 170px;
+    background: #ffffff;
+    border: 1px solid #dce3eb;
+    border-radius: 8px;
+    box-shadow: 0 8px 26px rgba(25, 38, 55, 0.16);
+    padding: 6px 0;
+    animation: fm-fadein 0.12s ease;
+}
+
+.fm-context-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: #344256;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+
+.fm-context-item:hover {
+    background: #f0f5ff;
+    color: #3478df;
+}
+
+.fm-context-item i {
+    width: 16px;
+    font-size: 13px;
+    text-align: center;
+    color: #718096;
+}
+
+.fm-context-item:hover i {
+    color: #3478df;
+}
+
+.fm-context-item.danger {
+    color: #c24c4c;
+}
+
+.fm-context-item.danger:hover {
+    background: #fff0f0;
+    color: #c24c4c;
+}
+
+.fm-context-item.danger i {
+    color: #c24c4c;
+}
+
+.fm-context-divider {
+    height: 1px;
+    background: #eef1f5;
+    margin: 4px 0;
+}
+
+/* =========================================
+   RESPONSIVE DESIGN
+========================================= */
+
+@media (max-width: 900px) {
+    .fm-sidebar {
+        width: 190px;
+        min-width: 190px;
+    }
+
+    .fm-main {
+        padding: 18px;
+    }
+
+    .fm-stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 650px) {
+    .fm-app {
+        display: block;
+    }
+
+    .fm-sidebar {
+        width: 100%;
+        min-width: 0;
+        min-height: auto;
+    }
+
+    .fm-menu {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        padding: 10px;
+    }
+
+    .fm-menu-label {
+        display: none;
+    }
+
+    .fm-menu a {
+        flex: 1 1 42%;
+        margin: 0;
+    }
+
+    .fm-sidebar-footer {
+        display: none;
+    }
+
+    .fm-main {
+        padding: 14px;
+    }
+
+    .fm-header {
+        flex-wrap: wrap;
+    }
+
+    .fm-header-search {
+        width: 100%;
+        max-width: 100%;
+    }
+
+    .fm-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .fm-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</css>
+        <data_table>sp_instance</data_table>
+        <demo_data/>
+        <description/>
+        <docs/>
+        <field_list/>
+        <has_preview>false</has_preview>
+        <id>copy_of_file_home</id>
+        <internal>false</internal>
+        <link><![CDATA[function link(scope, element, attrs, controller) {  }]]></link>
+        <name>copy of File Home</name>
+        <option_schema/>
+        <public>false</public>
+        <roles/>
+        <script><![CDATA[(function () {
+    /*
+     * File Manager Widget — Server Script
+     * ServiceNow Portal Widget
+     *
+     * Tables used:
+     *   x_1830514_fm_file    — File records
+     *   x_1830514_fm_folder  — Folder records
+     *   x_1830514_fm_share   — Share records
+     */
+
+    var FILE_TABLE = 'x_1830514_fm_file';
+    var FOLDER_TABLE = 'x_1830514_fm_folder';
+    var SHARE_TABLE = 'x_1830514_fm_share';
+
+    var userId = gs.getUserID();
+
+    /* ---- Initialise response ---- */
+    data.files = [];
+    data.folders = [];
+    data.sharedFiles = [];
+    data.sharedFolders = [];
+    data.recycleFiles = [];
+    data.recycleFolders = [];
+    data.users = [];
+    data.groups = [];
+    data.storage = { fileCount: 0, totalBytes: 0, byType: [] };
+    data.g_ck = gs.getSession().getSessionToken();
+    data.error = '';
+    data.success = '';
+
+    try {
+        /* ---- Search users (early return) ---- */
+        if (input && input.action === 'search_users') {
+            searchUsers();
+            return;
+        }
+
+        /* ---- Search groups (early return) ---- */
+        if (input && input.action === 'search_groups') {
+            searchGroups();
+            return;
+        }
+
+        /* ---- Attach to target record (picker mode, early return) ---- */
+        if (input && input.action === 'attach_to_record') {
+            attachToRecord();
+            return;
+        }
+
+        /* ---- Process action if one was sent ---- */
+        if (input && input.action) {
+            processAction();
+
+            /* Do not reload widget data after a failed action */
+            if (data.error) return;
+        }
+
+        /* ---- Load full widget data ---- */
+        loadData();
+
+    } catch (e) {
+        gs.error('FileManagerWidget error: ' + e.message + '\n' + e.stack);
+        data.error = 'An unexpected server error occurred. Please refresh and try again.';
+    }
+
+    /* ==================================================
+       ACTION DISPATCHER
+    ================================================== */
+
+    function processAction() {
+        switch (input.action) {
+            case 'refresh':
+                // Explicitly refresh all data
+                break;
+            case 'create_folder': createFolder(); break;
+            case 'rename_folder': renameFolder(); break;
+            case 'create_file': createFile(); break;
+            case 'update_file': updateFile(); break;
+            case 'delete_file': deleteFile(); break;
+            case 'delete_folder': deleteFolder(); break;
+            case 'restore_file': restoreFile(); break;
+            case 'restore_folder': restoreFolder(); break;
+            case 'delete_file_permanent': deleteFilePermanent(); break;
+            case 'delete_folder_permanent': deleteFolderPermanent(); break;
+            case 'share': shareItem(); break;
+            case 'empty_bin': emptyBin(); break;
+            default:
+                data.error = 'Invalid action: ' + (input.action || '');
+        }
+    }
+
+    /* ==================================================
+       HELPERS & SHARED LOGIC
+    ================================================== */
+
+    /** Safely fetch a single record by sys_id — returns GlideRecord or null */
+    function getRecord(table, sysId) {
+        if (!sysId) return null;
+        try {
+            var gr = new GlideRecord(table);
+            if (gr.get(sysId)) return gr;
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    function isDeleted(gr) {
+        return gr.getValue('is_deleted') === '1' ||
+            gr.getValue('is_deleted') === true;
+    }
+
+    /** Check whether a share record is active and not expired */
+    function isActiveShare(share) {
+        var activeVal = share.getValue('active');
+        if (activeVal !== '1' && activeVal !== true && activeVal !== 'true') return false;
+
+        var expiry = share.getValue('expiration_date');
+        if (expiry) {
+            var expiryDate = new GlideDateTime(expiry);
+            var now = new GlideDateTime();
+            if (expiryDate.getNumericValue() < now.getNumericValue()) return false;
+        }
+        return true;
+    }
+
+    /** Check if share applies to current user (direct user share OR group membership OR created by user) */
+    function isShareForUser(share) {
+        if (!isActiveShare(share)) return false;
+
+        var targetUser = share.getValue('shared_with_user');
+        if (targetUser && targetUser === userId) return true;
+
+        var targetGroup = share.getValue('shared_with_group');
+        if (targetGroup) {
+            try {
+                if (gs.getUser().isMemberOf(targetGroup)) return true;
+            } catch (e) { /* ignore */ }
+        }
+
+        var sharedBy = share.getValue('shared_by');
+        if (sharedBy && sharedBy === userId) return true;
+
+        return false;
+    }
+
+    /** Return the share permission ('Viewer'|'Editor') for current user on an item,
+     *  checking both direct user shares and group shares. */
+    function getDirectShare(tableField, itemId) {
+        var share = new GlideRecord(SHARE_TABLE);
+        share.addQuery(tableField, itemId);
+        share.addQuery('active', true);
+
+        var qc = share.addQuery('shared_with_user', userId);
+        try {
+            var myGroups = gs.getUser().getMyGroups();
+            if (myGroups && myGroups.size() > 0) {
+                qc.addOrCondition('shared_with_group', 'IN', myGroups.toArray().join(','));
+            }
+        } catch (e) { /* fallback */ }
+
+        qc.addOrCondition('shared_by', userId);
+
+        share.query();
+
+        var bestPerm = '';
+        while (share.next()) {
+            if (isShareForUser(share)) {
+                var perm = share.getValue('permission') || 'Viewer';
+                if (perm === 'Editor') return 'Editor'; // Editor overrides Viewer
+                bestPerm = perm;
+            }
+        }
+        return bestPerm;
+    }
+
+    /** Resolve folder permission for the current user */
+    function getFolderPermission(folderId) {
+        if (!folderId) return '';
+        var folder = getRecord(FOLDER_TABLE, folderId);
+        if (!folder || isDeleted(folder)) return '';
+        if (folder.getValue('owner') === userId) return 'Owner';
+        return getDirectShare('folder', folderId);
+    }
+
+    /** Resolve file permission for the current user (file → direct share → folder) */
+    function getFilePermission(file) {
+        if (!file || isDeleted(file)) return '';
+        if (file.getValue('owner') === userId) return 'Owner';
+
+        var direct = getDirectShare('file', file.getUniqueValue());
+        if (direct) return direct;
+
+        var folderId = file.getValue('folder');
+        if (folderId) return getFolderPermission(folderId);
+
+        return '';
+    }
+
+    function canEdit(permission) {
+        return permission === 'Owner' || permission === 'Editor';
+    }
+
+    function canOwnFile(file) {
+        return file && file.getValue('owner') === userId;
+    }
+
+    function canOwnFolder(folder) {
+        return folder && folder.getValue('owner') === userId;
+    }
+
+    /** Return the most recent attachment sys_id for a file record */
+    function getAttachmentId(fileId) {
+        var att = new GlideRecord('sys_attachment');
+        att.addQuery('table_name', FILE_TABLE);
+        att.addQuery('table_sys_id', fileId);
+        att.orderByDesc('sys_created_on');
+        att.setLimit(1);
+        att.query();
+        if (att.next()) return att.getUniqueValue();
+        return '';
+    }
+
+    /** Append a file object to a target array — skips if user has no permission */
+    function addFileToList(file, target) {
+        var permission = getFilePermission(file);
+        if (!permission) return;
+
+        var fn = file.getValue('filename') || file.getValue('file_name') || file.getValue('name') || file.getDisplayValue() || '';
+
+        target.push({
+            sys_id: file.getUniqueValue(),
+            filename: fn,
+            folder: file.getValue('folder') || '',
+            folder_name: file.getDisplayValue('folder') || '',
+            description: file.getValue('description') || '',
+            owner: file.getValue('owner') || '',
+            file_extension: file.getValue('file_extension') || '',
+            file_size: parseInt(file.getValue('file_size'), 10) || 0,
+            content_type: file.getValue('content_type') || '',
+            attachment_id: getAttachmentId(file.getUniqueValue()),
+            permission: permission,
+            can_edit: canEdit(permission),
+            sys_created_on: file.getValue('sys_created_on') || ''
+        });
+    }
+
+    /** Append a folder object to a target array — skips if user has no permission */
+    function addFolderToList(folder, target) {
+        var permission = getFolderPermission(folder.getUniqueValue());
+        if (!permission) return;
+
+        var fn = folder.getValue('folder_name') || folder.getValue('name') || folder.getDisplayValue() || '';
+
+        target.push({
+            sys_id: folder.getUniqueValue(),
+            folder_name: fn,
+            parent_folder: folder.getValue('parent_folder') || '',
+            description: folder.getValue('description') || '',
+            owner: folder.getValue('owner') || '',
+            permission: permission,
+            can_edit: canEdit(permission)
+        });
+    }
+
+    /* ==================================================
+       ATTACH FILE(S) TO A TARGET RECORD (picker mode)
+    ================================================== */
+
+    function attachToRecord() {
+        data.attached_count = 0;
+
+        var ids         = input.file_ids || [];
+        var targetTable = (input.target_table || '').trim();
+        var targetId    = (input.target_sys_id || '').trim();
+
+        if (!ids.length || !targetTable || !targetId) {
+            data.error = 'Missing file or target record details.';
+            return;
+        }
+
+        /* Target must exist and be writable by this user */
+        var secure = new GlideRecordSecure(targetTable);
+        if (!secure.isValid()) {
+            data.error = 'Invalid target table.';
+            return;
+        }
+        if (!secure.get(targetId)) {
+            data.error = 'Target record not found. Save the record first.';
+            return;
+        }
+        if (!secure.canWrite()) {
+            data.error = 'You do not have permission to attach files to this record.';
+            return;
+        }
+
+        var target = new GlideRecord(targetTable);
+        target.get(targetId);
+
+        var gsa    = new GlideSysAttachment();
+        var failed = [];
+
+        for (var i = 0; i < ids.length; i++) {
+            var file = getRecord(FILE_TABLE, ids[i]);
+
+            /* Reuse the widget's own permission model (owner / share / folder share) */
+            if (!file || isDeleted(file) || !getFilePermission(file)) {
+                failed.push('a file you cannot access');
+                continue;
+            }
+
+            var attId = getAttachmentId(file.getUniqueValue());
+            if (!attId) {
+                failed.push(file.getValue('filename') || 'a file');
+                continue;
+            }
+
+            var att = new GlideRecord('sys_attachment');
+            if (!att.get(attId)) {
+                failed.push(file.getValue('filename') || 'a file');
+                continue;
+            }
+
+            var newId = gsa.writeContentStream(
+                target,
+                att.getValue('file_name'),
+                att.getValue('content_type'),
+                gsa.getContentStream(attId)
+            );
+
+            if (newId) data.attached_count++;
+            else failed.push(att.getValue('file_name'));
+        }
+
+        if (failed.length)
+            data.error = 'Could not attach: ' + failed.join(', ');
+        else
+            data.success = data.attached_count + ' file(s) attached.';
+    }
+
+    /* ==================================================
+       SEARCH USERS & GROUPS
+    ================================================== */
+
+    function searchUsers() {
+        data.users = [];
+        var term = (input.search_term || '').trim();
+        if (term.length < 2) return;
+
+        var users = new GlideRecord('sys_user');
+        users.addQuery('active', true);
+        users.addQuery('sys_id', '!=', userId);
+
+        var cond = users.addQuery('name', 'CONTAINS', term);
+        cond.addOrCondition('user_name', 'CONTAINS', term);
+        cond.addOrCondition('email', 'CONTAINS', term);
+
+        users.orderBy('name');
+        users.setLimit(50);
+        users.query();
+
+        while (users.next()) {
+            data.users.push({
+                sys_id: users.getUniqueValue(),
+                name: users.getValue('name') || '',
+                user_name: users.getValue('user_name') || '',
+                email: users.getValue('email') || ''
+            });
+        }
+    }
+
+    function searchGroups() {
+        data.groups = [];
+        var term = (input.search_term || '').trim();
+        if (term.length < 2) return;
+
+        var groups = new GlideRecord('sys_user_group');
+        groups.addQuery('active', true);
+        groups.addQuery('name', 'CONTAINS', term);
+        groups.orderBy('name');
+        groups.setLimit(50);
+        groups.query();
+
+        while (groups.next()) {
+            data.groups.push({
+                sys_id: groups.getUniqueValue(),
+                name: groups.getValue('name') || '',
+                description: groups.getValue('description') || ''
+            });
+        }
+    }
+
+    /* ==================================================
+       CREATE FOLDER (with duplicate check)
+    ================================================== */
+
+    function createFolder() {
+        var folderName = (input.folder_name || '').trim();
+        var parentFolder = (input.parent_folder || '').trim();
+        var description = (input.description || '').trim();
+
+        if (!folderName) {
+            data.error = 'Please enter a folder name.';
+            return;
+        }
+        if (folderName.length > 40) {
+            data.error = 'Folder name cannot exceed 40 characters.';
+            return;
+        }
+
+        /* Permission to create subfolder */
+        if (parentFolder) {
+            var parent = getRecord(FOLDER_TABLE, parentFolder);
+            if (!parent || isDeleted(parent)) {
+                data.error = 'Parent folder not found.';
+                return;
+            }
+            if (!canEdit(getFolderPermission(parent.getUniqueValue()))) {
+                data.error = 'You do not have permission to create a subfolder here.';
+                return;
+            }
+        }
+
+        /* Duplicate check */
+        if (_folderNameExists(folderName, parentFolder, null)) {
+            data.error = 'A folder with this name already exists in this location.';
+            return;
+        }
+
+        var folder = new GlideRecord(FOLDER_TABLE);
+        folder.initialize();
+        if (folder.isValidField('folder_name')) {
+            folder.setValue('folder_name', folderName);
+        } else if (folder.isValidField('name')) {
+            folder.setValue('name', folderName);
+        } else {
+            folder.setValue('folder_name', folderName);
+        }
+        folder.setValue('owner', userId);
+        folder.setValue('description', description);
+        folder.setValue('is_deleted', false);
+        folder.setValue('active', true);
+        if (parentFolder) folder.setValue('parent_folder', parentFolder);
+
+        var folderId = folder.insert();
+        if (!folderId) {
+            data.error = 'Unable to create folder. Please check your permissions.';
+            return;
+        }
+
+        data.success = 'Folder "' + folderName + '" created successfully.';
+        data.folder_sys_id = folderId;
+    }
+
+    /* ==================================================
+       RENAME FOLDER
+    ================================================== */
+
+    function renameFolder() {
+        var newName = (input.folder_name || '').trim();
+        var targetId = (input.sys_id || '').trim();
+
+        if (!newName || !targetId) {
+            data.error = 'Folder ID and new name are required.';
+            return;
+        }
+        if (newName.length > 40) {
+            data.error = 'Folder name cannot exceed 40 characters.';
+            return;
+        }
+
+        var folder = getRecord(FOLDER_TABLE, targetId);
+        if (!folder || isDeleted(folder)) {
+            data.error = 'Folder not found.';
+            return;
+        }
+        if (!canOwnFolder(folder)) {
+            data.error = 'Only the folder owner can rename this folder.';
+            return;
+        }
+
+        var parentFolder = folder.getValue('parent_folder') || '';
+
+        if (_folderNameExists(newName, parentFolder, targetId)) {
+            data.error = 'A folder with this name already exists in this location.';
+            return;
+        }
+
+        folder.setValue('folder_name', newName);
+        if (!folder.update()) {
+            data.error = 'Unable to rename folder.';
+            return;
+        }
+
+        data.success = 'Folder renamed to "' + newName + '".';
+    }
+
+    /* ==================================================
+       CREATE FILE RECORD
+    ================================================== */
+
+    function createFile() {
+        var filename = (input.filename || '').trim();
+        var folderId = (input.folder || '').trim();
+
+        if (!filename || !folderId) {
+            data.error = 'File name and destination folder are required.';
+            return;
+        }
+        if (filename.length > 255) {
+            data.error = 'File name is too long (max 255 characters).';
+            return;
+        }
+
+        var folder = getRecord(FOLDER_TABLE, folderId);
+        if (!folder || isDeleted(folder)) {
+            data.error = 'Destination folder not found.';
+            return;
+        }
+        if (!canEdit(getFolderPermission(folder.getUniqueValue()))) {
+            data.error = 'You do not have permission to upload into this folder.';
+            return;
+        }
+
+        var file = new GlideRecord(FILE_TABLE);
+        file.initialize();
+        if (file.isValidField('filename')) {
+            file.setValue('filename', filename);
+        } else if (file.isValidField('file_name')) {
+            file.setValue('file_name', filename);
+        } else if (file.isValidField('name')) {
+            file.setValue('name', filename);
+        } else {
+            file.setValue('filename', filename);
+        }
+        file.setValue('folder', folderId);
+        file.setValue('owner', userId);
+        file.setValue('file_extension', (input.extension || '').toLowerCase());
+        file.setValue('file_size', parseInt(input.file_size, 10) || 0);
+        file.setValue('content_type', input.content_type || 'application/octet-stream');
+        file.setValue('is_deleted', false);
+        file.setValue('current_version', 1);
+
+        var fileId = file.insert();
+        if (!fileId) {
+            data.error = 'Unable to create file record. Please check your permissions.';
+            return;
+        }
+
+        data.file_sys_id = fileId;
+        data.success = 'File record created.';
+    }
+
+    /* ==================================================
+       UPDATE FILE DESCRIPTION
+    ================================================== */
+
+    function updateFile() {
+        var file = getRecord(FILE_TABLE, input.sys_id);
+        if (!file || isDeleted(file)) {
+            data.error = 'File not found.';
+            return;
+        }
+        if (!canEdit(getFilePermission(file))) {
+            data.error = 'You do not have permission to edit this file.';
+            return;
+        }
+
+        file.setValue('description', (input.description || '').substring(0, 1000));
+        if (!file.update()) {
+            data.error = 'Unable to update file.';
+            return;
+        }
+
+        data.success = 'File updated successfully.';
+    }
+
+    /* ==================================================
+       DELETE FILE (soft)
+    ================================================== */
+
+    function deleteFile() {
+        var file = getRecord(FILE_TABLE, input.sys_id);
+        if (!file || isDeleted(file) || !canOwnFile(file)) {
+            data.error = 'Only the file owner can delete this file.';
+            return;
+        }
+
+        file.setValue('original_folder', file.getValue('folder'));
+        file.setValue('is_deleted', true);
+        file.setValue('deleted_by', userId);
+        file.setValue('deleted_date', new GlideDateTime());
+        file.update();
+
+        data.success = 'File moved to Recycle Bin.';
+    }
+
+    /* ==================================================
+       DELETE FOLDER (soft — must be empty)
+    ================================================== */
+
+    function deleteFolder() {
+        var folder = getRecord(FOLDER_TABLE, input.sys_id);
+        if (!folder || isDeleted(folder) || !canOwnFolder(folder)) {
+            data.error = 'Only the folder owner can delete this folder.';
+            return;
+        }
+
+        /* Ensure no active sub-folders */
+        var childFolders = new GlideRecord(FOLDER_TABLE);
+        childFolders.addQuery('parent_folder', folder.getUniqueValue());
+        childFolders.addQuery('is_deleted', false);
+        childFolders.setLimit(1);
+        childFolders.query();
+        if (childFolders.hasNext()) {
+            data.error = 'Please delete or move all subfolders first.';
+            return;
+        }
+
+        /* Ensure no active files */
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('folder', folder.getUniqueValue());
+        files.addQuery('is_deleted', false);
+        files.setLimit(1);
+        files.query();
+        if (files.hasNext()) {
+            data.error = 'Please delete or move all files in this folder first.';
+            return;
+        }
+
+        folder.setValue('is_deleted', true);
+        folder.setValue('deleted_by', userId);
+        folder.setValue('deleted_date', new GlideDateTime());
+        folder.setValue('active', false);
+        folder.update();
+
+        data.success = 'Folder moved to Recycle Bin.';
+    }
+
+    /* ==================================================
+       RESTORE FILE
+    ================================================== */
+
+    function restoreFile() {
+        var file = getRecord(FILE_TABLE, input.sys_id);
+        if (!file || !canOwnFile(file) || !isDeleted(file)) {
+            data.error = 'You cannot restore this file.';
+            return;
+        }
+
+        var originalFolder = file.getValue('original_folder');
+        if (originalFolder) {
+            var folder = getRecord(FOLDER_TABLE, originalFolder);
+            if (!folder || isDeleted(folder)) {
+                data.error = 'The original folder no longer exists. Please restore it first.';
+                return;
+            }
+            file.setValue('folder', originalFolder);
+        }
+
+        file.setValue('is_deleted', false);
+        file.setValue('deleted_by', '');
+        file.setValue('deleted_date', '');
+        file.setValue('original_folder', '');
+        file.update();
+
+        data.success = 'File restored successfully.';
+    }
+
+    /* ==================================================
+       RESTORE FOLDER
+    ================================================== */
+
+    function restoreFolder() {
+        var folder = getRecord(FOLDER_TABLE, input.sys_id);
+        if (!folder || !canOwnFolder(folder) || !isDeleted(folder)) {
+            data.error = 'You cannot restore this folder.';
+            return;
+        }
+
+        var parentId = folder.getValue('parent_folder');
+        if (parentId) {
+            var parent = getRecord(FOLDER_TABLE, parentId);
+            if (!parent || isDeleted(parent)) {
+                data.error = 'Please restore the parent folder first.';
+                return;
+            }
+        }
+
+        if (_folderNameExists(
+            folder.getValue('folder_name'),
+            parentId || '',
+            folder.getUniqueValue()
+        )) {
+            data.error = 'A folder with this name already exists in that location.';
+            return;
+        }
+
+        folder.setValue('is_deleted', false);
+        folder.setValue('deleted_by', '');
+        folder.setValue('deleted_date', '');
+        folder.setValue('active', true);
+        folder.update();
+
+        data.success = 'Folder restored successfully.';
+    }
+
+    /* ==================================================
+       EMPTY RECYCLE BIN (permanent delete)
+    ================================================== */
+
+    function emptyBin() {
+        /* Delete files */
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('owner', userId);
+        files.addQuery('is_deleted', true);
+        files.query();
+        while (files.next()) {
+            /* Also delete attached attachment records */
+            var att = new GlideRecord('sys_attachment');
+            att.addQuery('table_name', FILE_TABLE);
+            att.addQuery('table_sys_id', files.getUniqueValue());
+            att.query();
+            att.deleteMultiple();
+
+            files.deleteRecord();
+        }
+
+        /* Delete folders */
+        var folders = new GlideRecord(FOLDER_TABLE);
+        folders.addQuery('owner', userId);
+        folders.addQuery('is_deleted', true);
+        folders.query();
+        folders.deleteMultiple();
+
+        data.success = 'Recycle Bin emptied.';
+    }
+
+    /* ==================================================
+       PERMANENT DELETE INDIVIDUAL ITEM
+    ================================================== */
+
+    function deleteFilePermanent() {
+        var file = getRecord(FILE_TABLE, input.sys_id);
+        if (!file || !canOwnFile(file) || !isDeleted(file)) {
+            data.error = 'You cannot permanently delete this file.';
+            return;
+        }
+
+        var att = new GlideRecord('sys_attachment');
+        att.addQuery('table_name', FILE_TABLE);
+        att.addQuery('table_sys_id', file.getUniqueValue());
+        att.query();
+        att.deleteMultiple();
+
+        file.deleteRecord();
+        data.success = 'File permanently deleted.';
+    }
+
+    function deleteFolderPermanent() {
+        var folder = getRecord(FOLDER_TABLE, input.sys_id);
+
+        if (!folder || !canOwnFolder(folder) || !isDeleted(folder)) {
+            data.error = 'You cannot permanently delete this folder.';
+            return;
+        }
+
+        var folderId = folder.getUniqueValue();
+
+        // Check for child folders
+        var childFolders = new GlideRecord(FOLDER_TABLE);
+        childFolders.addQuery('parent_folder', folderId);
+        childFolders.setLimit(1);
+        childFolders.query();
+
+        if (childFolders.hasNext()) {
+            data.error = 'Cannot delete this folder because subfolders still exist.';
+            return;
+        }
+
+        // Check for files
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('folder', folderId);
+        files.setLimit(1);
+        files.query();
+
+        if (files.hasNext()) {
+            data.error = 'Cannot delete this folder because files still exist.';
+            return;
+        }
+
+        folder.deleteRecord();
+        data.success = 'Folder permanently deleted.';
+    }
+
+    /* ==================================================
+       SHARE FILE OR FOLDER
+    ================================================== */
+
+    function shareItem() {
+        var type = (input.type || '');
+        var itemId = (input.sys_id || '');
+        var shareRecipient = (input.recipient_type || 'user'); // 'user' | 'group'
+        var targetUser = (input.user_id || '');
+        var targetGroup = (input.group_id || '');
+        var permission = (input.permission || '');
+        var expirationDate = (input.expiration_date || '');
+
+        if (!itemId) {
+            data.error = 'No item specified to share.';
+            return;
+        }
+
+        if (permission !== 'Viewer' && permission !== 'Editor') {
+            data.error = 'Invalid permission level.';
+            return;
+        }
+
+        var targetField;
+        if (type === 'file') {
+            var item = getRecord(FILE_TABLE, itemId);
+            if (!item || isDeleted(item) || !canOwnFile(item)) {
+                data.error = 'Only the file owner can share this file.';
+                return;
+            }
+            targetField = 'file';
+        } else if (type === 'folder') {
+            var item2 = getRecord(FOLDER_TABLE, itemId);
+            if (!item2 || isDeleted(item2) || !canOwnFolder(item2)) {
+                data.error = 'Only the folder owner can share this folder.';
+                return;
+            }
+            targetField = 'folder';
+        } else {
+            data.error = 'Invalid item type.';
+            return;
+        }
+
+        var existing = new GlideRecord(SHARE_TABLE);
+        existing.addQuery(targetField, itemId);
+
+        if (shareRecipient === 'group') {
+            if (!targetGroup) {
+                data.error = 'Please select a group.';
+                return;
+            }
+            var grp = new GlideRecord('sys_user_group');
+            if (!grp.get(targetGroup) || grp.getValue('active') !== '1') {
+                data.error = 'Selected group is not available.';
+                return;
+            }
+            existing.addQuery('shared_with_group', targetGroup);
+        } else {
+            if (!targetUser) {
+                data.error = 'Please select a user.';
+                return;
+            }
+            if (targetUser === userId) {
+                data.error = 'You cannot share an item with yourself.';
+                return;
+            }
+            var user = new GlideRecord('sys_user');
+            if (!user.get(targetUser) || user.getValue('active') !== '1') {
+                data.error = 'The selected user is not available.';
+                return;
+            }
+            existing.addQuery('shared_with_user', targetUser);
+        }
+
+        existing.query();
+
+        // Sanitize expiration date if provided
+        var formattedExpiry = '';
+        if (expirationDate) {
+            try {
+                formattedExpiry = String(expirationDate).replace('T', ' ').replace(/\.\d+Z?$/, '');
+                if (formattedExpiry.length === 16) formattedExpiry += ':00';
+            } catch (e) {
+                formattedExpiry = '';
+            }
+        }
+
+        if (existing.next()) {
+            existing.setValue('active', true);
+            existing.setValue('permission', permission);
+            existing.setValue('shared_by', userId);
+            if (shareRecipient === 'group') {
+                existing.setValue('shared_with_group', targetGroup);
+                existing.setValue('shared_with_user', '');
+            } else {
+                existing.setValue('shared_with_user', targetUser);
+                existing.setValue('shared_with_group', '');
+            }
+            if (formattedExpiry) {
+                existing.setValue('expiration_date', formattedExpiry);
+            } else {
+                existing.setValue('expiration_date', '');
+            }
+            existing.update();
+        } else {
+            var share = new GlideRecord(SHARE_TABLE);
+            share.initialize();
+            share.setValue(targetField, itemId);
+            if (targetField === 'file') share.setValue('folder', '');
+            if (targetField === 'folder') share.setValue('file', '');
+
+            if (shareRecipient === 'group') {
+                share.setValue('shared_with_group', targetGroup);
+                share.setValue('shared_with_user', '');
+            } else {
+                share.setValue('shared_with_user', targetUser);
+                share.setValue('shared_with_group', '');
+            }
+            share.setValue('shared_by', userId);
+            share.setValue('permission', permission);
+            share.setValue('active', true);
+            if (formattedExpiry) {
+                share.setValue('expiration_date', formattedExpiry);
+            }
+            if (!share.insert()) {
+                data.error = 'Unable to share this item. Please try again.';
+                return;
+            }
+        }
+
+        data.success = 'Item shared successfully as ' + permission + '.';
+    }
+
+    /* ==================================================
+       LOAD WIDGET DATA
+    ================================================== */
+
+    function loadData() {
+        loadOwnedFolders();
+        loadOwnedFiles();
+        loadSharedItems();
+        loadRecycleBin();
+        loadStorage();
+    }
+
+    function loadOwnedFolders() {
+        var folders = new GlideRecord(FOLDER_TABLE);
+        folders.addQuery('owner', userId);
+        folders.addQuery('is_deleted', false);
+        folders.orderBy('folder_name');
+        folders.query();
+        while (folders.next()) addFolderToList(folders, data.folders);
+    }
+
+    function loadOwnedFiles() {
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('owner', userId);
+        files.addQuery('is_deleted', false);
+        files.orderByDesc('sys_created_on');
+        files.query();
+        while (files.next()) addFileToList(files, data.files);
+    }
+
+    function loadSharedItems() {
+        var shares = new GlideRecord(SHARE_TABLE);
+        shares.addQuery('active', true);
+
+        // Find shares:
+        // 1) Shared with current user
+        // 2) Shared with a group current user belongs to
+        // 3) Shared BY current user
+        var qc = shares.addQuery('shared_with_user', userId);
+        try {
+            var myGroups = gs.getUser().getMyGroups();
+            if (myGroups && myGroups.size() > 0) {
+                qc.addOrCondition('shared_with_group', 'IN', myGroups.toArray().join(','));
+            }
+        } catch (e) { /* fallback */ }
+
+        qc.addOrCondition('shared_by', userId);
+
+        shares.query();
+
+        var seenFiles = {};
+        var seenFolders = {};
+
+        while (shares.next()) {
+            if (!isActiveShare(shares)) continue;
+
+            var fileId = shares.getValue('file');
+            var folderId = shares.getValue('folder');
+
+            if (fileId && !seenFiles[fileId]) {
+                seenFiles[fileId] = true;
+                var file = getRecord(FILE_TABLE, fileId);
+                if (file && !isDeleted(file)) {
+                    addFileToList(file, data.sharedFiles);
+                }
+            }
+
+            if (folderId && !seenFolders[folderId]) {
+                seenFolders[folderId] = true;
+                var shFolder = getRecord(FOLDER_TABLE, folderId);
+                if (shFolder && !isDeleted(shFolder)) {
+                    addFolderToList(shFolder, data.sharedFolders);
+
+                    // Also load all files inside this shared folder
+                    var folderFiles = new GlideRecord(FILE_TABLE);
+                    folderFiles.addQuery('folder', folderId);
+                    folderFiles.addQuery('is_deleted', false);
+                    folderFiles.query();
+                    while (folderFiles.next()) {
+                        var fSysId = folderFiles.getUniqueValue();
+                        if (!seenFiles[fSysId]) {
+                            seenFiles[fSysId] = true;
+                            addFileToList(folderFiles, data.sharedFiles);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    function loadRecycleBin() {
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('owner', userId);
+        files.addQuery('is_deleted', true);
+        files.orderByDesc('deleted_date');
+        files.query();
+
+        while (files.next()) {
+            var deletedDate = files.getValue('deleted_date') || '';
+            if (deletedDate) {
+                try {
+                    var gdt = new GlideDateTime(deletedDate);
+                    deletedDate = gdt.getLocalDate().getLocalDate();
+                } catch (e) { /* keep raw value */ }
+            }
+
+            data.recycleFiles.push({
+                sys_id: files.getUniqueValue(),
+                filename: files.getValue('filename') || '',
+                file_size: parseInt(files.getValue('file_size'), 10) || 0,
+                file_extension: files.getValue('file_extension') || '',
+                deleted_date: deletedDate
+            });
+        }
+
+        var folders = new GlideRecord(FOLDER_TABLE);
+        folders.addQuery('owner', userId);
+        folders.addQuery('is_deleted', true);
+        folders.orderByDesc('deleted_date');
+        folders.query();
+
+        while (folders.next()) {
+            var dDate = folders.getValue('deleted_date') || '';
+            if (dDate) {
+                try {
+                    var gdt2 = new GlideDateTime(dDate);
+                    dDate = gdt2.getLocalDate().getLocalDate();
+                } catch (e) { /* keep raw value */ }
+            }
+
+            data.recycleFolders.push({
+                sys_id: folders.getUniqueValue(),
+                folder_name: folders.getValue('folder_name') || '',
+                deleted_date: dDate
+            });
+        }
+    }
+
+    function loadStorage() {
+        var byType = {};
+
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('owner', userId);
+        files.addQuery('is_deleted', false);
+        files.query();
+
+        while (files.next()) {
+            var size = parseInt(files.getValue('file_size'), 10) || 0;
+            var ext = (files.getValue('file_extension') || 'unknown').toLowerCase();
+
+            data.storage.fileCount++;
+            data.storage.totalBytes += size;
+
+            if (!byType[ext]) byType[ext] = { ext: ext, count: 0, totalBytes: 0 };
+            byType[ext].count++;
+            byType[ext].totalBytes += size;
+        }
+
+        /* Convert map to sorted array */
+        for (var key in byType) {
+            if (byType.hasOwnProperty(key)) data.storage.byType.push(byType[key]);
+        }
+        data.storage.byType.sort(function (a, b) { return b.totalBytes - a.totalBytes; });
+    }
+
+    /* ==================================================
+       PRIVATE HELPERS
+    ================================================== */
+
+    function _folderNameExists(name, parentFolder, excludeId) {
+        var dup = new GlideRecord(FOLDER_TABLE);
+        dup.addQuery('owner', userId);
+        dup.addQuery('folder_name', name);
+        dup.addQuery('is_deleted', false);
+
+        if (excludeId) dup.addQuery('sys_id', '!=', excludeId);
+
+        if (parentFolder) {
+            dup.addQuery('parent_folder', parentFolder);
+        } else {
+            dup.addNullQuery('parent_folder');
+        }
+
+        dup.setLimit(1);
+        dup.query();
+        return dup.hasNext();
+    }
+
+})();]]></script>
+        <servicenow>false</servicenow>
+        <sys_class_name>sp_widget</sys_class_name>
+        <sys_created_by>Siva</sys_created_by>
+        <sys_created_on>2026-11-12 12:39:30</sys_created_on>
+        <sys_id>7069f40dc3e01b10c05a33bc0501316d</sys_id>
+        <sys_mod_count>0</sys_mod_count>
+        <sys_name>copy of File Home</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sp_widget_7069f40dc3e01b10c05a33bc0501316d</sys_update_name>
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-12 12:39:30</sys_updated_on>
+        <template><![CDATA[<div class="fm-app" ng-class="{'fm-picker': c.pickerMode}" ng-keydown="c.onKeyDown($event)" ng-click="c.closeContextMenu()">
+
+  <!-- =========================================
+       SIDEBAR
+  ========================================= -->
+
+<!-- SIDEBAR -->
+<aside class="fm-sidebar">
+
+  <!-- LOGO -->
+  <div class="fm-logo" ng-click="c.goHome()">
+    <div class="fm-logo-icon">
+      <i class="fa fa-folder-open"></i>
+    </div>
+    <span>My Files</span>
+  </div>
+
+  <!-- NEW BUTTON -->
+  <div class="fm-new-wrapper fm-sidebar-new">
+
+    <button type="button"
+            class="fm-button fm-primary fm-new-btn"
+            ng-click="c.showNewMenu = !c.showNewMenu; $event.stopPropagation()">
+
+      <i class="fa fa-plus"></i>
+      <span>New</span>
+      <i class="fa fa-angle-down"></i>
+
+    </button>
+
+    <!-- SINGLE FOLDER UPLOAD INPUT -->
+    <input type="file"
+           id="fmFolderUpload"
+           webkitdirectory
+           directory
+           multiple
+           style="display:none"
+           onchange="angular.element(this).scope().c.onFolderUploadSelected(this)">
+
+    <!-- NEW DROPDOWN -->
+    <div class="fm-new-dropdown fm-sidebar-dropdown"
+         ng-if="c.showNewMenu"
+         ng-click="$event.stopPropagation()">
+
+      <!-- NEW FOLDER -->
+      <div class="fm-new-option"
+           ng-click="c.showNewMenu = false; c.openFolderModal()">
+
+        <i class="fa fa-folder"></i>
+
+        <span>
+          <strong>New Folder</strong>
+          <small>Create a new folder</small>
+        </span>
+
+      </div>
+
+      <!-- UPLOAD FOLDER -->
+      <div class="fm-new-option"
+           ng-click="c.showNewMenu = false; c.triggerFolderUpload()">
+
+        <i class="fa fa-folder-open"></i>
+
+        <span>
+          <strong>Upload Folder</strong>
+          <small>Select a folder from your computer</small>
+        </span>
+
+      </div>
+
+      <!-- NEW FILE -->
+      <div class="fm-new-option"
+           ng-click="c.showNewMenu = false; c.openUploadFolderPicker()">
+
+        <i class="fa fa-file"></i>
+
+        <span>
+          <strong>New File</strong>
+          <small>Select destination and upload files</small>
+        </span>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- WORKSPACE MENU -->
+  <div class="fm-menu">
+
+    <div class="fm-menu-label">WORKSPACE</div>
+
+    <a ng-class="{'active': c.view == 'home'}"
+       ng-click="c.goHome()">
+      <i class="fa fa-home"></i>
+      <span>Home</span>
+    </a>
+
+    <a ng-class="{'active': c.view == 'allfiles'}"
+       ng-click="c.setView('allfiles')">
+      <i class="fa fa-files-o"></i>
+      <span>All Files</span>
+      <span class="fm-count-pill" ng-if="c.data.files.length">
+        {{c.data.files.length}}
+      </span>
+    </a>
+
+    <a ng-class="{'active': c.view == 'folders' || c.view == 'files'}"
+       ng-click="c.setView('folders')">
+      <i class="fa fa-folder"></i>
+      <span>Folders</span>
+      <span class="fm-count-pill" ng-if="c.data.folders.length">
+        {{c.data.folders.length}}
+      </span>
+    </a>
+
+    <a ng-class="{'active': c.view == 'shared'}"
+       ng-click="c.setView('shared')">
+      <i class="fa fa-users"></i>
+      <span>Shared with Me</span>
+      <span class="fm-count-pill"
+            ng-if="c.data.sharedFiles.length + c.data.sharedFolders.length">
+        {{c.data.sharedFiles.length + c.data.sharedFolders.length}}
+      </span>
+    </a>
+
+    <div class="fm-menu-label fm-menu-spaced">MANAGE</div>
+
+    <a ng-class="{'active': c.view == 'recycle'}"
+       ng-click="c.setView('recycle')">
+      <i class="fa fa-trash"></i>
+      <span>Recycle Bin</span>
+      <span class="fm-badge"
+            ng-if="c.data.recycleFiles.length + c.data.recycleFolders.length > 0">
+        {{c.data.recycleFiles.length + c.data.recycleFolders.length}}
+      </span>
+    </a>
+
+    <a ng-class="{'active': c.view == 'storage'}"
+       ng-click="c.setView('storage')">
+      <i class="fa fa-database"></i>
+      <span>Storage</span>
+    </a>
+
+  </div>
+
+  <!-- SIDEBAR FOOTER -->
+  <div class="fm-sidebar-footer">
+    <i class="fa fa-cloud"></i>
+    <span>File Manager</span>
+  </div>
+
+</aside>
+
+  <!-- =========================================
+       MAIN CONTENT
+  ========================================= -->
+  <main class="fm-main">
+
+    <!-- PICKER MODE BANNER -->
+    <div ng-if="c.pickerMode"
+         style="margin:0 0 12px; padding:10px 14px; background:#eef4ff; border:1px solid #cfe0ff; border-radius:8px; font-size:12px; color:#2b4f9a; display:flex; align-items:center; gap:8px;">
+      <i class="fa fa-paperclip"></i>
+      <span>Double-click a file to attach it, or tick files and click <strong>Attach selected</strong>.</span>
+      <strong ng-if="c.pickBusy" style="margin-left:auto;"><i class="fa fa-spinner fa-spin"></i> Attaching...</strong>
+    </div>
+
+    <!-- TOP HEADER -->
+    <header class="fm-header">
+
+      <div class="fm-header-title">
+        <h2 ng-if="c.view == 'home'">Home</h2>
+        <h2 ng-if="c.view == 'allfiles'">All Files</h2>
+        <h2 ng-if="c.view == 'folders'">My Folders</h2>
+        <h2 ng-if="c.view == 'files'">{{c.currentFolderName}}</h2>
+        <h2 ng-if="c.view == 'shared'">Shared with Me</h2>
+        <h2 ng-if="c.view == 'recycle'">Recycle Bin</h2>
+        <h2 ng-if="c.view == 'storage'">Storage</h2>
+
+        <p>Manage your files and folders in one place.</p>
+      </div>
+
+      <div class="fm-header-actions">
+        <div class="fm-header-search">
+          <i class="fa fa-search"></i>
+          <input type="text"
+                 ng-model="c.searchText"
+                 placeholder="Search files and folders...">
+          <button class="fm-search-clear"
+                  ng-if="c.searchText"
+                  ng-click="c.searchText = ''">
+            <i class="fa fa-times"></i>
+          </button>
+        </div>
+
+        <button class="fm-refresh-btn"
+                title="Refresh"
+                ng-click="c.refresh()"
+                ng-class="{'fm-spinning': c.loading}">
+          <i class="fa fa-refresh"></i>
+        </button>
+      </div>
+
+    </header>
+
+    <!-- BREADCRUMB (shown in folder contents view) -->
+    <div class="fm-breadcrumb" ng-if="c.view == 'files' && c.breadcrumb.length > 1">
+      <span ng-repeat="crumb in c.breadcrumb track by $index">
+        <a ng-if="!$last" ng-click="c.navigateBreadcrumb($index)">{{crumb.name}}</a>
+        <span ng-if="$last" class="fm-breadcrumb-current">{{crumb.name}}</span>
+        <i ng-if="!$last" class="fa fa-angle-right fm-breadcrumb-sep"></i>
+      </span>
+    </div>
+
+    <!-- ALERT MESSAGES -->
+    <div class="fm-alert fm-alert-success" ng-if="c.message">
+      <i class="fa fa-check-circle"></i>
+      <span>{{c.message}}</span>
+      <button ng-click="c.message = ''">&times;</button>
+    </div>
+
+    <div class="fm-alert fm-alert-error" ng-if="c.error">
+      <i class="fa fa-exclamation-circle"></i>
+      <span>{{c.error}}</span>
+      <button ng-click="c.error = ''">&times;</button>
+    </div>
+
+    <!-- =========================================
+         HOME VIEW
+    ========================================= -->
+    <section ng-if="c.view == 'home'" class="fm-content">
+
+      <div class="fm-welcome">
+        <div>
+          <h3>Welcome to My Files</h3>
+          <p>Organize, access and share your files easily.</p>
+        </div>
+        <div class="fm-welcome-icon">
+          <i class="fa fa-cloud"></i>
+        </div>
+      </div>
+
+      <div class="fm-stats">
+
+        <div class="fm-stat-card fm-clickable" ng-click="c.setView('folders')">
+          <div class="fm-stat-icon blue">
+            <i class="fa fa-folder"></i>
+          </div>
+          <div>
+            <span>Total Folders</span>
+            <strong>{{c.data.folders.length || 0}}</strong>
+          </div>
+        </div>
+
+        <div class="fm-stat-card fm-clickable" ng-click="c.setView('allfiles')">
+          <div class="fm-stat-icon purple">
+            <i class="fa fa-file"></i>
+          </div>
+          <div>
+            <span>Total Files</span>
+            <strong>{{c.data.files.length || 0}}</strong>
+          </div>
+        </div>
+
+        <div class="fm-stat-card fm-clickable" ng-click="c.setView('shared')">
+          <div class="fm-stat-icon green">
+            <i class="fa fa-share-alt"></i>
+          </div>
+          <div>
+            <span>Shared Files</span>
+            <strong>{{c.data.sharedFiles.length || 0}}</strong>
+          </div>
+        </div>
+
+        <div class="fm-stat-card fm-clickable" ng-click="c.setView('recycle')">
+          <div class="fm-stat-icon orange">
+            <i class="fa fa-trash"></i>
+          </div>
+          <div>
+            <span>In Recycle Bin</span>
+            <strong>{{(c.data.recycleFiles.length + c.data.recycleFolders.length) || 0}}</strong>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RECENT FOLDERS -->
+      <div class="fm-section">
+        <div class="fm-section-header">
+          <div>
+            <h3>My Folders</h3>
+            <p>Access your folders</p>
+          </div>
+          <button class="fm-button fm-primary" ng-click="c.setView('folders')">
+            View All
+          </button>
+        </div>
+
+        <div class="fm-grid" ng-if="c.data.folders.length">
+          <div class="fm-folder-card"
+               ng-repeat="folder in c.data.folders | limitTo:6"
+               ng-click="c.openFolder(folder)"
+               fm-context-type="folder"
+               fm-context-item>
+            <div class="fm-folder-main">
+              <div class="fm-folder-icon">
+                <i class="fa fa-folder"></i>
+              </div>
+              <div class="fm-card-info">
+                <strong>{{folder.folder_name}}</strong>
+                <span>{{folder.permission}}</span>
+              </div>
+            </div>
+            <i class="fa fa-angle-right fm-card-arrow"></i>
+          </div>
+        </div>
+
+        <div class="fm-empty" ng-if="!c.data.folders.length">
+          <i class="fa fa-folder-open"></i>
+          <p>No folders created yet.</p>
+          <button class="fm-button fm-primary" ng-click="c.openFolderModal()">
+            Create Folder
+          </button>
+        </div>
+      </div>
+
+      <!-- RECENT FILES -->
+      <div class="fm-section">
+        <div class="fm-section-header">
+          <div>
+            <h3>Recent Files</h3>
+            <p>Your uploaded files</p>
+          </div>
+          <button class="fm-button" ng-click="c.setView('allfiles')">
+            View All Files
+          </button>
+        </div>
+
+        <div class="fm-table-wrap" ng-if="c.data.files.length">
+          <table class="fm-table">
+            <thead>
+              <tr>
+                <th>File Name</th>
+                <th>Folder</th>
+                <th>Size</th>
+                <th>Permission</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr ng-repeat="file in c.data.files | limitTo:8"
+                  ng-dblclick="c.onRowDblClick(file)"
+                  fm-context-type="file"
+                  fm-context-item>
+                <td>
+                  <div class="fm-file-name">
+                    <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
+                    <span title="{{file.filename}}">{{file.filename}}</span>
+                  </div>
+                </td>
+                <td>
+                  <span class="fm-folder-chip"
+                        ng-if="c.getFolderName(file.folder, file)"
+                        ng-click="c.openFolderById(file.folder)">
+                    <i class="fa fa-folder"></i> {{c.getFolderName(file.folder, file)}}
+                  </span>
+                  <span ng-if="!c.getFolderName(file.folder, file)" style="color:#aaa">—</span>
+                </td>
+                <td>{{c.formatBytes(file.file_size)}}</td>
+                <td>
+                  <span class="fm-permission fm-perm-{{file.permission | lowercase}}">
+                    {{file.permission}}
+                  </span>
+                </td>
+                <td>
+                  <div class="fm-actions">
+                    <button title="Download" ng-click="c.downloadFile(file); $event.stopPropagation()">
+                      <i class="fa fa-download"></i>
+                    </button>
+                    <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file); $event.stopPropagation()">
+                      <i class="fa fa-eye"></i>
+                    </button>
+                    <button title="Share" ng-if="file.permission == 'Owner'" ng-click="c.openShare(file, 'file'); $event.stopPropagation()">
+                      <i class="fa fa-share-alt"></i>
+                    </button>
+                    <button title="Delete" ng-if="file.permission == 'Owner'" ng-click="c.confirmDeleteFile(file); $event.stopPropagation()" class="fm-del-btn">
+                      <i class="fa fa-trash"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="fm-empty" ng-if="!c.data.files.length">
+          <i class="fa fa-file-o"></i>
+          <p>No files uploaded yet.</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =========================================
+         ALL FILES VIEW
+    ========================================= -->
+    <section ng-if="c.view == 'allfiles'" class="fm-content">
+
+      <div class="fm-toolbar">
+        <div>
+          <h3>All Files</h3>
+          <p>Browse and manage all your files across all folders.</p>
+        </div>
+
+        <div class="fm-toolbar-actions">
+          <!-- File Type Filter -->
+          <select ng-model="c.fileTypeFilter"
+                  style="height:36px; padding:0 8px; border:1px solid #dfe5ed; border-radius:6px; background:#fff; font-size:12px; color:#536174;">
+            <option value="">All Types</option>
+            <option value="image">Images</option>
+            <option value="document">Documents</option>
+            <option value="pdf">PDFs</option>
+            <option value="archive">Archives</option>
+          </select>
+
+          <!-- Upload files (asks which folder) -->
+          <button class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()">
+            <i class="fa fa-upload"></i>
+            Upload Files
+          </button>
+        </div>
+      </div>
+
+      <div class="fm-table-wrap" ng-if="c.allFilesFiltered().length">
+        <table class="fm-table">
+          <thead>
+            <tr>
+              <th style="width:34px;">
+                <input type="checkbox" ng-model="c.allSelected" ng-change="c.toggleSelectAllGlobal()">
+              </th>
+              <th ng-click="c.toggleSort('filename')" class="fm-sortable">
+                File Name <i class="fa" ng-class="c.getSortIcon('filename')"></i>
+              </th>
+              <th>Folder</th>
+              <th ng-click="c.toggleSort('file_size')" class="fm-sortable">
+                Size <i class="fa" ng-class="c.getSortIcon('file_size')"></i>
+              </th>
+              <th>Permission</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr ng-repeat="file in c.allFilesFiltered() | orderBy:c.fileSort"
+                ng-dblclick="c.onRowDblClick(file)"
+                fm-context-type="file"
+                fm-context-item>
+              <td>
+                <input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()"
+                       ng-dblclick="$event.stopPropagation()">
+              </td>
+              <td>
+                <div class="fm-file-name">
+                  <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
+                  <span title="{{file.filename}}">{{file.filename}}</span>
+                </div>
+              </td>
+              <td>
+                <span class="fm-folder-chip"
+                      ng-if="c.getFolderName(file.folder, file)"
+                      ng-click="c.openFolderById(file.folder)">
+                  <i class="fa fa-folder"></i> {{c.getFolderName(file.folder, file)}}
+                </span>
+                <span ng-if="!c.getFolderName(file.folder, file)" style="color:#aaa">—</span>
+              </td>
+              <td>{{c.formatBytes(file.file_size)}}</td>
+              <td>
+                <span class="fm-permission fm-perm-{{file.permission | lowercase}}">
+                  {{file.permission}}
+                </span>
+              </td>
+              <td>
+                <div class="fm-actions">
+                  <button title="Download" ng-click="c.downloadFile(file)">
+                    <i class="fa fa-download"></i>
+                  </button>
+                  <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)">
+                    <i class="fa fa-eye"></i>
+                  </button>
+                  <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)">
+                    <i class="fa fa-pencil"></i>
+                  </button>
+                  <button title="Share" ng-if="file.permission == 'Owner'" ng-click="c.openShare(file, 'file')">
+                    <i class="fa fa-share-alt"></i>
+                  </button>
+                  <button title="Delete" ng-if="file.permission == 'Owner'" ng-click="c.confirmDeleteFile(file)" class="fm-del-btn">
+                    <i class="fa fa-trash"></i>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Bulk Actions Bar -->
+      <div style="margin-top:12px; display:flex; align-items:center; gap:8px;" ng-if="c.selectedCount() > 0">
+        <span style="font-size:12px; color:#3478df; font-weight:600;">{{c.selectedCount()}} selected</span>
+        <button class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()">
+          <i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}
+        </button>
+        <button class="fm-button" ng-if="!c.pickerMode" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
+        <button class="fm-button fm-danger" ng-if="!c.pickerMode" ng-click="c.confirmDeleteSelected()"><i class="fa fa-trash"></i> Delete Selected</button>
+        <button class="fm-button" ng-click="c.clearSelection()">Clear</button>
+      </div>
+
+      <div class="fm-empty" ng-if="!c.allFilesFiltered().length">
+        <i class="fa fa-file-o"></i>
+        <p>No files found.</p>
+        <button class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()">
+          <i class="fa fa-upload"></i> Upload Files
+        </button>
+      </div>
+
+    </section>
+
+    <!-- =========================================
+         FOLDERS VIEW
+    ========================================= -->
+    <section ng-if="c.view == 'folders'" class="fm-content">
+
+      <div class="fm-toolbar">
+        <div>
+          <h3>All Folders</h3>
+          <p>Manage your folders and documents.</p>
+        </div>
+
+        <div class="fm-toolbar-actions">
+          <button class="fm-button" ng-click="c.openUploadFolderPicker()">
+            <i class="fa fa-upload"></i>
+            Upload Files
+          </button>
+
+          <button class="fm-button fm-primary" ng-click="c.openFolderModal()">
+            <i class="fa fa-plus"></i>
+            New Folder
+          </button>
+        </div>
+      </div>
+
+      <div class="fm-grid" ng-if="c.data.folders.length">
+        <div class="fm-folder-card"
+             ng-repeat="folder in c.data.folders | filter:c.searchFolders"
+             fm-context-type="folder"
+             fm-context-item>
+
+          <div class="fm-folder-main" ng-click="c.openFolder(folder)">
+            <div class="fm-folder-icon">
+              <i class="fa fa-folder"></i>
+            </div>
+            <div class="fm-card-info">
+              <strong>{{folder.folder_name}}</strong>
+              <span>{{folder.permission}}</span>
+            </div>
+          </div>
+
+          <div class="fm-card-menu">
+            <button title="Share"
+                    ng-if="folder.permission == 'Owner'"
+                    ng-click="c.openShare(folder, 'folder'); $event.stopPropagation()">
+              <i class="fa fa-share-alt"></i>
+            </button>
+            <button title="Rename"
+                    ng-if="folder.permission == 'Owner'"
+                    ng-click="c.openRenameFolder(folder); $event.stopPropagation()">
+              <i class="fa fa-pencil"></i>
+            </button>
+            <button title="Delete"
+                    ng-if="folder.permission == 'Owner'"
+                    ng-click="c.confirmDeleteFolder(folder); $event.stopPropagation()">
+              <i class="fa fa-trash"></i>
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="fm-empty" ng-if="!c.data.folders.length">
+        <i class="fa fa-folder-open"></i>
+        <p>No folders available.</p>
+        <button class="fm-button fm-primary" ng-click="c.openFolderModal()">
+          Create Folder
+        </button>
+      </div>
+
+    </section>
+
+    <!-- =========================================
+         FOLDER CONTENTS (FILES VIEW)
+    ========================================= -->
+    <section ng-if="c.view == 'files'" class="fm-content">
+
+      <div class="fm-toolbar">
+        <div>
+          <button class="fm-back-btn" ng-click="c.navigateBack()">
+            <i class="fa fa-arrow-left"></i>
+            Back to Folders
+          </button>
+
+          <h3>{{c.currentFolderName}}</h3>
+          <p>Files and subfolders in this folder.</p>
+        </div>
+
+        <div class="fm-toolbar-actions" ng-if="c.currentFolderCanEdit()">
+          <button class="fm-button" ng-click="c.openFolderModal()">
+            <i class="fa fa-plus"></i>
+            New Subfolder
+          </button>
+
+          <!-- DIRECT UPLOAD BUTTON -->
+          <label class="fm-button fm-primary" ng-class="{'fm-disabled': c.uploading}">
+            <i class="fa fa-upload"></i>
+            {{c.uploading ? 'Uploading...' : 'Upload Files'}}
+            <input type="file"
+                   multiple
+                   style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;"
+                   ng-disabled="c.uploading"
+                   onchange="angular.element(this).scope().c.onDirectFilesSelected(this)">
+          </label>
+        </div>
+      </div>
+
+      <!-- Upload Progress -->
+      <div class="fm-upload-progress" ng-if="c.uploading">
+        <i class="fa fa-spinner fa-spin" style="color:#3478df;"></i>
+        <span>Uploading {{c.uploadCurrentName}} ({{c.uploadIndex}}/{{c.uploadTotal}})...</span>
+        <div class="fm-upload-bar">
+          <div class="fm-upload-fill" ng-style="{'width': c.uploadProgress + '%'}"></div>
+        </div>
+      </div>
+
+      <!-- SUBFOLDERS -->
+      <div class="fm-subsection" ng-if="c.foldersInCurrentFolder().length">
+        <h4>Subfolders</h4>
+        <div class="fm-grid">
+          <div class="fm-folder-card"
+               ng-repeat="folder in c.foldersInCurrentFolder() | filter:c.searchFolders"
+               fm-context-type="folder"
+               fm-context-item>
+            <div class="fm-folder-main" ng-click="c.openFolder(folder)">
+              <div class="fm-folder-icon">
+                <i class="fa fa-folder"></i>
+              </div>
+              <div class="fm-card-info">
+                <strong>{{folder.folder_name}}</strong>
+                <span>{{folder.permission}}</span>
+              </div>
+            </div>
+            <div class="fm-card-menu">
+              <button title="Share" ng-if="folder.permission == 'Owner'" ng-click="c.openShare(folder, 'folder'); $event.stopPropagation()">
+                <i class="fa fa-share-alt"></i>
+              </button>
+              <button title="Rename" ng-if="folder.permission == 'Owner'" ng-click="c.openRenameFolder(folder); $event.stopPropagation()">
+                <i class="fa fa-pencil"></i>
+              </button>
+              <button title="Delete" ng-if="folder.permission == 'Owner'" ng-click="c.confirmDeleteFolder(folder); $event.stopPropagation()">
+                <i class="fa fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FILES IN FOLDER -->
+      <div class="fm-subsection">
+        <h4>Files</h4>
+
+        <div class="fm-table-wrap" ng-if="c.filesInCurrentFolder().length">
+          <table class="fm-table">
+            <thead>
+              <tr>
+                <th style="width:34px;">
+                  <input type="checkbox" ng-model="c.allSelected" ng-change="c.toggleSelectAll()">
+                </th>
+                <th ng-click="c.toggleSort('filename')" class="fm-sortable">
+                  File Name <i class="fa" ng-class="c.getSortIcon('filename')"></i>
+                </th>
+                <th ng-click="c.toggleSort('file_size')" class="fm-sortable">
+                  Size <i class="fa" ng-class="c.getSortIcon('file_size')"></i>
+                </th>
+                <th>Permission</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr ng-repeat="file in c.filesInCurrentFolder() | filter:c.searchFiles | orderBy:c.fileSort"
+                  ng-dblclick="c.onRowDblClick(file)"
+                  fm-context-type="file"
+                  fm-context-item>
+                <td>
+                  <input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()"
+                         ng-dblclick="$event.stopPropagation()">
+                </td>
+                <td>
+                  <div class="fm-file-name">
+                    <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
+                    <span title="{{file.filename}}">{{file.filename}}</span>
+                  </div>
+                </td>
+                <td>{{c.formatBytes(file.file_size)}}</td>
+                <td>
+                  <span class="fm-permission fm-perm-{{file.permission | lowercase}}">
+                    {{file.permission}}
+                  </span>
+                </td>
+                <td>
+                  <div class="fm-actions">
+                    <button title="Download" ng-click="c.downloadFile(file)">
+                      <i class="fa fa-download"></i>
+                    </button>
+                    <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)">
+                      <i class="fa fa-eye"></i>
+                    </button>
+                    <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)">
+                      <i class="fa fa-pencil"></i>
+                    </button>
+                    <button title="Share" ng-if="file.permission == 'Owner'" ng-click="c.openShare(file, 'file')">
+                      <i class="fa fa-share-alt"></i>
+                    </button>
+                    <button title="Delete" ng-if="file.permission == 'Owner'" ng-click="c.confirmDeleteFile(file)" class="fm-del-btn">
+                      <i class="fa fa-trash"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Bulk Action Bar -->
+        <div style="margin-top:12px; display:flex; align-items:center; gap:8px;" ng-if="c.selectedCount() > 0">
+          <span style="font-size:12px; color:#3478df; font-weight:600;">{{c.selectedCount()}} selected</span>
+          <button class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()">
+            <i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}
+          </button>
+          <button class="fm-button" ng-if="!c.pickerMode" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
+          <button class="fm-button fm-danger" ng-if="!c.pickerMode" ng-click="c.confirmDeleteSelected()"><i class="fa fa-trash"></i> Delete Selected</button>
+          <button class="fm-button" ng-click="c.clearSelection()">Clear</button>
+        </div>
+
+        <div class="fm-empty" ng-if="!c.filesInCurrentFolder().length">
+          <i class="fa fa-file-o"></i>
+          <p>No files in this folder.</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =========================================
+         SHARED WITH ME
+    ========================================= -->
+    <section ng-if="c.view == 'shared'" class="fm-content">
+
+      <div class="fm-toolbar">
+        <div>
+          <h3>Shared with Me</h3>
+          <p>Files and folders shared with you by other users.</p>
+        </div>
+      </div>
+
+      <div class="fm-subsection">
+        <h4>Shared Folders</h4>
+        <div class="fm-grid" ng-if="c.data.sharedFolders.length">
+          <div class="fm-folder-card"
+               ng-repeat="folder in c.data.sharedFolders | filter:c.searchFolders"
+               fm-context-type="folder"
+               fm-context-item>
+            <div class="fm-folder-main" ng-click="c.openFolder(folder)">
+              <div class="fm-folder-icon">
+                <i class="fa fa-folder"></i>
+              </div>
+              <div class="fm-card-info">
+                <strong>{{folder.folder_name}}</strong>
+                <span>{{folder.permission}}</span>
+              </div>
+            </div>
+            <i class="fa fa-angle-right fm-card-arrow"></i>
+          </div>
+        </div>
+        <div class="fm-empty" ng-if="!c.data.sharedFolders.length">
+          <p>No shared folders available.</p>
+        </div>
+      </div>
+
+      <div class="fm-subsection">
+        <h4>Shared Files</h4>
+        <div class="fm-table-wrap" ng-if="c.data.sharedFiles.length">
+          <table class="fm-table">
+            <thead>
+              <tr>
+                <th>File Name</th>
+                <th>Size</th>
+                <th>Permission</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr ng-repeat="file in c.data.sharedFiles | filter:c.searchFiles"
+                  ng-dblclick="c.onRowDblClick(file)"
+                  fm-context-type="file"
+                  fm-context-item>
+                <td>
+                  <div class="fm-file-name">
+                    <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
+                    <span>{{file.filename}}</span>
+                  </div>
+                </td>
+                <td>{{c.formatBytes(file.file_size)}}</td>
+                <td>
+                  <span class="fm-permission fm-perm-{{file.permission | lowercase}}">
+                    {{file.permission}}
+                  </span>
+                </td>
+                <td>
+                  <div class="fm-actions">
+                    <button title="Download" ng-click="c.downloadFile(file)">
+                      <i class="fa fa-download"></i>
+                    </button>
+                    <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)">
+                      <i class="fa fa-eye"></i>
+                    </button>
+                    <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)">
+                      <i class="fa fa-pencil"></i>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="fm-empty" ng-if="!c.data.sharedFiles.length">
+          <p>No shared files available.</p>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =========================================
+         RECYCLE BIN
+    ========================================= -->
+    <section ng-if="c.view == 'recycle'" class="fm-content">
+
+      <div class="fm-toolbar">
+        <div>
+          <p style="margin:0; font-size:13px; color:#657386;">Restore or permanently delete items you removed.</p>
+        </div>
+
+        <div class="fm-toolbar-actions" ng-if="c.data.recycleFiles.length || c.data.recycleFolders.length">
+          <button class="fm-button fm-danger" ng-click="c.confirmEmptyBin()">
+            <i class="fa fa-trash"></i>
+            Empty Bin
+          </button>
+        </div>
+      </div>
+
+      <div class="fm-empty" ng-if="!c.data.recycleFiles.length && !c.data.recycleFolders.length">
+        <i class="fa fa-trash"></i>
+        <p>Recycle Bin is empty.</p>
+      </div>
+
+      <!-- DELETED FOLDERS -->
+      <div class="fm-subsection" ng-if="c.data.recycleFolders.length">
+        <h4>Deleted Folders</h4>
+        <div class="fm-table-wrap">
+          <table class="fm-table">
+            <thead>
+              <tr>
+                <th>Folder Name</th>
+                <th>Deleted On</th>
+                <th style="width: 250px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr ng-repeat="folder in c.data.recycleFolders"
+                  fm-context-type="recycle_folder"
+                  fm-context-item>
+                <td>
+                  <div class="fm-file-name">
+                    <i class="fa fa-folder fm-file-icon" style="color:#e6a52c;"></i>
+                    <span>{{folder.folder_name}}</span>
+                  </div>
+                </td>
+                <td>{{folder.deleted_date || '—'}}</td>
+                <td>
+                  <div class="fm-recycle-actions">
+                    <button class="fm-restore-btn" ng-click="c.restoreFolder(folder)">
+                      <i class="fa fa-undo"></i> Restore
+                    </button>
+                    <button class="fm-perm-delete-btn" ng-click="c.confirmPermanentDeleteFolder(folder)">
+                      <i class="fa fa-times"></i> Delete Permanently
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- DELETED FILES -->
+      <div class="fm-subsection" ng-if="c.data.recycleFiles.length">
+        <h4>Deleted Files</h4>
+        <div class="fm-table-wrap">
+          <table class="fm-table">
+            <thead>
+              <tr>
+                <th>File Name</th>
+                <th>Size</th>
+                <th>Deleted On</th>
+                <th style="width: 250px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr ng-repeat="file in c.data.recycleFiles"
+                  fm-context-type="recycle_file"
+                  fm-context-item>
+                <td>
+                  <div class="fm-file-name">
+                    <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
+                    <span>{{file.filename}}</span>
+                  </div>
+                </td>
+                <td>{{c.formatBytes(file.file_size)}}</td>
+                <td>{{file.deleted_date || '—'}}</td>
+                <td>
+                  <div class="fm-recycle-actions">
+                    <button class="fm-restore-btn" ng-click="c.restoreFile(file)">
+                      <i class="fa fa-undo"></i> Restore
+                    </button>
+                    <button class="fm-perm-delete-btn" ng-click="c.confirmPermanentDeleteFile(file)">
+                      <i class="fa fa-times"></i> Delete Permanently
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =========================================
+         STORAGE
+    ========================================= -->
+    <section ng-if="c.view == 'storage'" class="fm-content">
+
+      <div class="fm-toolbar">
+        <div>
+          <h3>Storage Overview</h3>
+          <p>Summary of your uploaded files and storage usage.</p>
+        </div>
+      </div>
+
+      <div class="fm-storage-card">
+        <div class="fm-storage-icon">
+          <i class="fa fa-database"></i>
+        </div>
+        <div>
+          <h3>Your File Storage</h3>
+          <p>Summary of active files owned by you.</p>
+        </div>
+      </div>
+
+      <div class="fm-stats" style="grid-template-columns: repeat(2, minmax(0,1fr));">
+        <div class="fm-stat-card">
+          <div class="fm-stat-icon blue">
+            <i class="fa fa-file"></i>
+          </div>
+          <div>
+            <span>Total Files</span>
+            <strong>{{c.data.storage.fileCount || 0}}</strong>
+          </div>
+        </div>
+
+        <div class="fm-stat-card">
+          <div class="fm-stat-icon green">
+            <i class="fa fa-hdd-o"></i>
+          </div>
+          <div>
+            <span>Total File Size</span>
+            <strong>{{c.formatBytes(c.data.storage.totalBytes)}}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="fm-section" ng-if="c.data.storage.byType.length">
+        <div class="fm-section-header">
+          <div>
+            <h3>Storage by File Type</h3>
+          </div>
+        </div>
+        <div class="fm-table-wrap">
+          <table class="fm-table">
+            <thead>
+              <tr>
+                <th>Type</th>
+                <th>File Count</th>
+                <th>Total Size</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr ng-repeat="row in c.data.storage.byType | orderBy:'-totalBytes'">
+                <td>
+                  <span class="fm-ext-badge">{{row.ext || 'unknown'}}</span>
+                </td>
+                <td>{{row.count}}</td>
+                <td>{{c.formatBytes(row.totalBytes)}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <p class="fm-storage-note">
+        This is the total size of your active File Manager records.
+        It is not the instance-wide ServiceNow storage quota.
+      </p>
+
+    </section>
+
+  </main>
+
+  <!-- =========================================
+       UPLOAD DESTINATION FOLDER PICKER MODAL
+  ========================================= -->
+  <div class="fm-modal-backdrop" ng-if="c.showUploadFolderPicker">
+    <div class="fm-modal" ng-click="$event.stopPropagation()">
+
+      <div class="fm-modal-header">
+        <h3>Upload Files</h3>
+        <button ng-click="c.showUploadFolderPicker = false">&times;</button>
+      </div>
+
+      <p style="margin:0 0 10px; font-size:12px; color:#536174;">
+        Select the destination folder where you want to upload the files:
+      </p>
+
+      <div class="fm-folder-picker-list">
+        <div class="fm-folder-picker-item"
+             ng-repeat="folder in c.editableFolders() | orderBy:'folder_name'"
+             ng-class="{'selected': c.targetUploadFolder == folder.sys_id}"
+             ng-click="c.targetUploadFolder = folder.sys_id; c.targetUploadFolderName = folder.folder_name">
+          <i class="fa fa-folder"></i>
+          <span class="fm-folder-picker-name">{{folder.folder_name}}</span>
+          <span class="fm-folder-picker-perm">{{folder.permission}}</span>
+          <i class="fa fa-check fm-folder-picker-check" ng-if="c.targetUploadFolder == folder.sys_id"></i>
+        </div>
+
+        <div style="padding:16px; text-align:center; color:#98a4b2; font-size:12px;"
+             ng-if="!c.editableFolders().length">
+          No folders available. Please create a folder first.
+        </div>
+      </div>
+
+      <a class="fm-picker-new-link"
+         ng-click="c.showUploadFolderPicker = false; c.openFolderModal()">
+        <i class="fa fa-plus"></i> Create a new folder
+      </a>
+
+      <div class="fm-modal-actions">
+        <button class="fm-button" ng-click="c.showUploadFolderPicker = false">
+          Cancel
+        </button>
+
+        <label class="fm-button fm-primary"
+               ng-class="{'fm-disabled': !c.targetUploadFolder || c.uploading}">
+          <i class="fa fa-upload"></i>
+          {{c.uploading ? 'Uploading...' : 'Choose Files & Upload'}}
+          <input type="file"
+                 multiple
+                 style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;"
+                 ng-disabled="!c.targetUploadFolder || c.uploading"
+                 onchange="angular.element(this).scope().c.onPickerFilesSelected(this)">
+        </label>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================
+       CREATE / RENAME FOLDER MODAL
+  ========================================= -->
+  <div class="fm-modal-backdrop" ng-if="c.showFolderModal">
+    <div class="fm-modal" ng-click="$event.stopPropagation()">
+
+      <div class="fm-modal-header">
+        <h3>{{c.editFolderTarget ? 'Rename Folder' : 'Create New Folder'}}</h3>
+        <button ng-click="c.closeFolderModal()">&times;</button>
+      </div>
+
+      <label>Folder Name</label>
+      <input type="text"
+             ng-model="c.newFolderName"
+             maxlength="40"
+             placeholder="Enter folder name"
+             ng-keyup="c.onFolderNameKey($event)"
+             autofocus>
+      <div class="fm-char-count">{{(c.newFolderName || '').length}}/40</div>
+
+      <label ng-if="!c.editFolderTarget">Description</label>
+      <textarea ng-if="!c.editFolderTarget"
+                ng-model="c.newFolderDescription"
+                rows="3"
+                maxlength="1000"
+                placeholder="Enter folder description">
+      </textarea>
+
+      <div class="fm-modal-actions">
+        <button class="fm-button" ng-click="c.closeFolderModal()">
+          Cancel
+        </button>
+
+        <button class="fm-button fm-primary"
+                ng-click="c.editFolderTarget ? c.renameFolder() : c.createFolder()"
+                ng-disabled="!(c.newFolderName || '').trim()">
+          <i class="fa" ng-class="c.editFolderTarget ? 'fa-check' : 'fa-plus'"></i>
+          {{c.editFolderTarget ? 'Save' : 'Create Folder'}}
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================
+       SHARE MODAL
+  ========================================= -->
+  <div class="fm-modal-backdrop" ng-if="c.showShareModal">
+    <div class="fm-modal fm-share-modal" ng-click="$event.stopPropagation()">
+
+      <div class="fm-modal-header">
+        <h3>Share {{c.shareType == 'file' ? 'File' : 'Folder'}}</h3>
+        <button ng-click="c.showShareModal = false">&times;</button>
+      </div>
+
+      <div style="padding:8px 12px; background:#f8fafd; border:1px solid #e9edf2; border-radius:6px; font-size:12px; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
+        <i class="fa" ng-class="c.shareType == 'file' ? 'fa-file-o' : 'fa-folder'" style="color:#3478df;"></i>
+        <strong>{{c.shareTarget ? (c.shareTarget.filename || c.shareTarget.folder_name) : ''}}</strong>
+      </div>
+
+      <!-- SHARE WITH USER OR GROUP TOGGLE -->
+      <label>Share With</label>
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button type="button"
+                class="fm-button"
+                style="flex:1;"
+                ng-class="{'fm-primary': c.shareRecipientType == 'user'}"
+                ng-click="c.setShareRecipientType('user')">
+          <i class="fa fa-user"></i> User
+        </button>
+        <button type="button"
+                class="fm-button"
+                style="flex:1;"
+                ng-class="{'fm-primary': c.shareRecipientType == 'group'}"
+                ng-click="c.setShareRecipientType('group')">
+          <i class="fa fa-users"></i> Group
+        </button>
+      </div>
+
+      <!-- SEARCH USER -->
+      <div ng-if="c.shareRecipientType == 'user'">
+        <label style="margin-top:0;">Search User</label>
+        <div class="fm-user-search">
+          <i class="fa fa-search"></i>
+          <input type="text"
+                 ng-model="c.userSearchText"
+                 ng-change="c.searchUsers()"
+                 placeholder="Search by name, username or email...">
+        </div>
+        <p class="fm-search-help">Enter at least 2 characters to search active users.</p>
+
+        <div class="fm-user-status" ng-if="c.userSearchLoading">
+          <i class="fa fa-spinner fa-spin"></i> Searching users...
+        </div>
+
+        <div class="fm-user-status fm-user-error" ng-if="c.userSearchError">
+          {{c.userSearchError}}
+        </div>
+
+        <div class="fm-user-results" ng-if="c.data.users.length && !c.userSearchLoading">
+          <div class="fm-user-option"
+               ng-repeat="user in c.data.users"
+               ng-class="{'fm-user-selected': c.selectedUser == user.sys_id}"
+               ng-click="c.selectedUser = user.sys_id">
+            <div class="fm-user-avatar">{{(user.name || 'U').charAt(0).toUpperCase()}}</div>
+            <div class="fm-user-info">
+              <strong>{{user.name}}</strong>
+              <span>{{user.user_name}} · {{user.email}}</span>
+            </div>
+            <i class="fa fa-check" style="color:#3478df;" ng-if="c.selectedUser == user.sys_id"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- SEARCH GROUP -->
+      <div ng-if="c.shareRecipientType == 'group'">
+        <label style="margin-top:0;">Search Group</label>
+        <div class="fm-user-search">
+          <i class="fa fa-search"></i>
+          <input type="text"
+                 ng-model="c.groupSearchText"
+                 ng-change="c.searchGroups()"
+                 placeholder="Search by group name...">
+        </div>
+        <p class="fm-search-help">Enter at least 2 characters to search active groups.</p>
+
+        <div class="fm-user-status" ng-if="c.groupSearchLoading">
+          <i class="fa fa-spinner fa-spin"></i> Searching groups...
+        </div>
+
+        <div class="fm-user-status fm-user-error" ng-if="c.groupSearchError">
+          {{c.groupSearchError}}
+        </div>
+
+        <div class="fm-user-results" ng-if="c.data.groups.length && !c.groupSearchLoading">
+          <div class="fm-user-option"
+               ng-repeat="group in c.data.groups"
+               ng-class="{'fm-user-selected': c.selectedGroup == group.sys_id}"
+               ng-click="c.selectedGroup = group.sys_id">
+            <div class="fm-user-avatar" style="background:#7b1fa2;"><i class="fa fa-users" style="font-size:12px;"></i></div>
+            <div class="fm-user-info">
+              <strong>{{group.name}}</strong>
+              <span ng-if="group.description">{{group.description}}</span>
+            </div>
+            <i class="fa fa-check" style="color:#3478df;" ng-if="c.selectedGroup == group.sys_id"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- PERMISSION LEVEL -->
+      <label>Permission</label>
+      <select ng-model="c.sharePermission">
+        <option value="Viewer">Viewer</option>
+        <option value="Editor">Editor</option>
+      </select>
+
+      <!-- OPTIONAL EXPIRATION DATE -->
+      <label>Expiration Date <span style="font-size:11px; font-weight:normal; color:#8a96a5;">(Optional)</span></label>
+      <input type="datetime-local"
+             ng-model="c.shareExpirationDate"
+             style="width:100%; min-height:38px; padding:8px 11px; border:1px solid #dce3eb; border-radius:6px; font-size:12px; color:#344256;"
+             placeholder="Select expiration date">
+      <p style="margin:4px 0 0; font-size:11px; color:#8a96a5;">Leave empty for unlimited access.</p>
+
+      <div class="fm-modal-actions">
+        <button class="fm-button" ng-click="c.showShareModal = false">
+          Cancel
+        </button>
+        <button class="fm-button fm-primary"
+                ng-click="c.shareItem()"
+                ng-disabled="(c.shareRecipientType == 'user' && !c.selectedUser) || (c.shareRecipientType == 'group' && !c.selectedGroup)">
+          <i class="fa fa-share-alt"></i> Share
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================
+       EDIT FILE DESCRIPTION MODAL
+  ========================================= -->
+  <div class="fm-modal-backdrop" ng-if="c.showEditFileModal">
+    <div class="fm-modal" ng-click="$event.stopPropagation()">
+
+      <div class="fm-modal-header">
+        <h3>Edit File Description</h3>
+        <button ng-click="c.showEditFileModal = false">&times;</button>
+      </div>
+
+      <p style="font-size:12px; font-weight:600; color:#344256; margin:0 0 10px;">
+        {{c.editFileTarget ? c.editFileTarget.filename : ''}}
+      </p>
+
+      <label>Description</label>
+      <textarea ng-model="c.editFileDescription"
+                rows="4"
+                maxlength="1000"
+                placeholder="Enter file description...">
+      </textarea>
+
+      <div class="fm-modal-actions">
+        <button class="fm-button" ng-click="c.showEditFileModal = false">Cancel</button>
+        <button class="fm-button fm-primary" ng-click="c.saveEditFile()">
+          <i class="fa fa-check"></i> Save
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================
+       CONFIRMATION MODAL
+  ========================================= -->
+  <div class="fm-modal-backdrop" ng-if="c.confirmModal.show">
+    <div class="fm-modal fm-confirm-modal" ng-click="$event.stopPropagation()">
+
+      <div class="fm-modal-header">
+        <h3>{{c.confirmModal.title}}</h3>
+        <button ng-click="c.confirmModal.show = false">&times;</button>
+      </div>
+
+      <p class="fm-confirm-text">{{c.confirmModal.message}}</p>
+
+      <div class="fm-modal-actions">
+        <button class="fm-button" ng-click="c.confirmModal.show = false">
+          Cancel
+        </button>
+        <button class="fm-button"
+                ng-class="c.confirmModal.danger ? 'fm-danger' : 'fm-primary'"
+                ng-click="c.confirmModal.onConfirm(); c.confirmModal.show = false">
+          <i class="fa" ng-class="c.confirmModal.icon || 'fa-check'"></i>
+          {{c.confirmModal.confirmLabel || 'Confirm'}}
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================
+       IMAGE PREVIEW MODAL
+  ========================================= -->
+  <div class="fm-modal-backdrop fm-preview-backdrop" ng-if="c.previewFile">
+    <div class="fm-preview-modal" ng-click="$event.stopPropagation()">
+
+      <div class="fm-preview-header">
+        <strong>{{c.previewFile.filename}}</strong>
+        <button ng-click="c.closePreview()">&times;</button>
+      </div>
+
+      <div class="fm-preview-content">
+        <img ng-if="c.previewFile.attachment_id"
+             ng-src="/sys_attachment.do?sys_id={{c.previewFile.attachment_id}}"
+             alt="{{c.previewFile.filename}}">
+      </div>
+
+      <div class="fm-preview-footer">
+        <button class="fm-button" ng-click="c.downloadFile(c.previewFile)">
+          <i class="fa fa-download"></i> Download
+        </button>
+        <button class="fm-button" ng-click="c.closePreview()">
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================
+       RIGHT-CLICK CONTEXT MENU
+  ========================================= -->
+  <div class="fm-context-menu"
+       ng-if="c.contextMenu.show"
+       ng-style="{'top': c.contextMenu.y + 'px', 'left': c.contextMenu.x + 'px'}"
+       ng-click="$event.stopPropagation()">
+
+    <!-- FILE CONTEXT MENU -->
+    <div ng-if="c.contextMenu.type == 'file'">
+      <div class="fm-context-item" ng-click="c.downloadFile(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-download"></i> Download
+      </div>
+      <div class="fm-context-item" ng-if="c.isImage(c.contextMenu.item)" ng-click="c.preview(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-eye"></i> Preview
+      </div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.folder" ng-click="c.openFolderById(c.contextMenu.item.folder); c.closeContextMenu()">
+        <i class="fa fa-folder-open"></i> Go to Folder
+      </div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.can_edit" ng-click="c.openEditFile(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-pencil"></i> Edit Description
+      </div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openShare(c.contextMenu.item, 'file'); c.closeContextMenu()">
+        <i class="fa fa-share-alt"></i> Share
+      </div>
+      <div class="fm-context-divider" ng-if="c.contextMenu.item.permission == 'Owner'"></div>
+      <div class="fm-context-item danger" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.confirmDeleteFile(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-trash"></i> Move to Bin
+      </div>
+    </div>
+
+    <!-- FOLDER CONTEXT MENU -->
+    <div ng-if="c.contextMenu.type == 'folder'">
+      <div class="fm-context-item" ng-click="c.openFolder(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-folder-open"></i> Open Folder
+      </div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openRenameFolder(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-pencil"></i> Rename
+      </div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openShare(c.contextMenu.item, 'folder'); c.closeContextMenu()">
+        <i class="fa fa-share-alt"></i> Share
+      </div>
+      <div class="fm-context-divider" ng-if="c.contextMenu.item.permission == 'Owner'"></div>
+      <div class="fm-context-item danger" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.confirmDeleteFolder(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-trash"></i> Move to Bin
+      </div>
+    </div>
+
+    <!-- RECYCLE FILE CONTEXT MENU -->
+    <div ng-if="c.contextMenu.type == 'recycle_file'">
+      <div class="fm-context-item" ng-click="c.restoreFile(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-undo"></i> Restore
+      </div>
+      <div class="fm-context-divider"></div>
+      <div class="fm-context-item danger" ng-click="c.confirmPermanentDeleteFile(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-times"></i> Delete Permanently
+      </div>
+    </div>
+
+    <!-- RECYCLE FOLDER CONTEXT MENU -->
+    <div ng-if="c.contextMenu.type == 'recycle_folder'">
+      <div class="fm-context-item" ng-click="c.restoreFolder(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-undo"></i> Restore
+      </div>
+      <div class="fm-context-divider"></div>
+      <div class="fm-context-item danger" ng-click="c.confirmPermanentDeleteFolder(c.contextMenu.item); c.closeContextMenu()">
+        <i class="fa fa-times"></i> Delete Permanently
+      </div>
+    </div>
+
+  </div>
+
+</div>]]></template>
+    </sp_widget>
+</record_update>

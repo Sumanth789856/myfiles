@@ -13,6 +13,7 @@ api.controller = function ($scope, $http, $timeout, $location) {
        STATE
     =================================================== */
     c.view            = 'home';        // 'home' | 'allfiles' | 'folders' | 'files' | 'shared' | 'recycle' | 'storage'
+    c.homeSubView     = '';            // Dynamically show dashboard clicks within the home page
     c.currentFolder   = '';
     c.currentFolderName = '';
     c.searchText      = '';
@@ -44,22 +45,12 @@ api.controller = function ($scope, $http, $timeout, $location) {
 
     // Share State
     c.shareRecipientType    = 'user';  // 'user' | 'group'
-    c.selectedUser          = '';
-    c.selectedGroup         = '';
+    c.selectedUsers         = [];      // Switched to Arrays
+    c.selectedGroups        = [];
     c.sharePermission       = 'Viewer';
     c.shareExpirationDate   = '';
     c.shareTarget           = null;
     c.shareType             = 'file';
-
-    c.userSearchText        = '';
-    c.userSearchLoading     = false;
-    c.userSearchError       = '';
-    c.userSearchTimer       = null;
-
-    c.groupSearchText       = '';
-    c.groupSearchLoading    = false;
-    c.groupSearchError      = '';
-    c.groupSearchTimer      = null;
 
     // Edit File Description State
     c.editFileTarget      = null;
@@ -178,8 +169,21 @@ api.controller = function ($scope, $http, $timeout, $location) {
        NAVIGATION
     =================================================== */
 
+    c.setHomeSubView = function (subView) {
+        c.view              = 'home';
+        c.homeSubView       = subView;
+        c.currentFolder     = '';
+        c.currentFolderName = '';
+        c.searchText        = '';
+        c.breadcrumb        = [];
+        _clearAlerts();
+        _clearSelection();
+        c.closeContextMenu();
+    };
+
     c.goHome = function () {
         c.view              = 'home';
+        c.homeSubView       = ''; 
         c.currentFolder     = '';
         c.currentFolderName = '';
         c.searchText        = '';
@@ -191,6 +195,7 @@ api.controller = function ($scope, $http, $timeout, $location) {
 
     c.setView = function (view) {
         c.view              = view;
+        c.homeSubView       = ''; 
         c.currentFolder     = '';
         c.currentFolderName = '';
         c.searchText        = '';
@@ -215,6 +220,7 @@ api.controller = function ($scope, $http, $timeout, $location) {
         c.currentFolder     = folder.sys_id;
         c.currentFolderName = folder.folder_name;
         c.view              = 'files';
+        c.homeSubView       = '';
         c.searchText        = '';
         _clearAlerts();
         _clearSelection();
@@ -237,12 +243,14 @@ api.controller = function ($scope, $http, $timeout, $location) {
 
         if (!crumb.id) {
             c.view              = 'folders';
+            c.homeSubView       = '';
             c.currentFolder     = '';
             c.currentFolderName = '';
         } else {
             c.currentFolder     = crumb.id;
             c.currentFolderName = crumb.name;
             c.view              = 'files';
+            c.homeSubView       = '';
         }
 
         c.searchText = '';
@@ -262,7 +270,6 @@ api.controller = function ($scope, $http, $timeout, $location) {
        FOLDER & FILE QUERIES
     =================================================== */
 
-    /** All folders where user can add files (owned or editor) */
     c.editableFolders = function () {
         var owned = (c.data.folders || []);
         var sharedEdit = (c.data.sharedFolders || []).filter(function (f) {
@@ -310,13 +317,10 @@ api.controller = function ($scope, $http, $timeout, $location) {
 
     c.allFilesFiltered = function () {
         return (c.data.files || []).filter(function (file) {
-            // Search text filter
             if (c.searchText) {
                 var hit = (file.filename || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
                 if (!hit) return false;
             }
-
-            // Type filter
             if (!c.fileTypeFilter) return true;
 
             var ext = (file.file_extension || '').toLowerCase();
@@ -666,17 +670,16 @@ api.controller = function ($scope, $http, $timeout, $location) {
             c.refresh();
         });
     };
-
-    /* ===================================================
-       SHARE MODAL (Supports Users, Groups & Expiration)
+/* ===================================================
+       SHARE MODAL (Supports Multiple Users & Groups)
     =================================================== */
 
     c.openShare = function (item, type) {
         c.shareTarget           = item;
         c.shareType             = type;
         c.shareRecipientType    = 'user';
-        c.selectedUser          = '';
-        c.selectedGroup         = '';
+        c.selectedUsers         = [];
+        c.selectedGroups        = [];
         c.sharePermission       = 'Viewer';
         c.shareExpirationDate   = '';
         c.userSearchText        = '';
@@ -692,8 +695,8 @@ api.controller = function ($scope, $http, $timeout, $location) {
 
     c.setShareRecipientType = function (type) {
         c.shareRecipientType = type;
-        c.selectedUser       = '';
-        c.selectedGroup      = '';
+        c.selectedUsers      = [];
+        c.selectedGroups     = [];
         c.userSearchText     = '';
         c.groupSearchText    = '';
         c.userSearchError    = '';
@@ -704,6 +707,31 @@ api.controller = function ($scope, $http, $timeout, $location) {
         }
     };
 
+    // --- Multi-Select Helpers --- //
+    c.addUser = function (user) {
+        if (!c.isUserSelected(user.sys_id)) {
+            c.selectedUsers.push(user);
+        }
+        c.userSearchText = ''; // Clear text to easily search the next user
+        c.data.users = [];
+    };
+    c.removeUser = function (index) { c.selectedUsers.splice(index, 1); };
+    c.isUserSelected = function (id) {
+        return c.selectedUsers.some(function(u) { return u.sys_id === id; });
+    };
+
+    c.addGroup = function (group) {
+        if (!c.isGroupSelected(group.sys_id)) {
+            c.selectedGroups.push(group);
+        }
+        c.groupSearchText = ''; // Clear text to easily search the next group
+        c.data.groups = [];
+    };
+    c.removeGroup = function (index) { c.selectedGroups.splice(index, 1); };
+    c.isGroupSelected = function (id) {
+        return c.selectedGroups.some(function(g) { return g.sys_id === id; });
+    };
+   
     c.searchUsers = function () {
         if (c.userSearchTimer) $timeout.cancel(c.userSearchTimer);
 
@@ -764,28 +792,32 @@ api.controller = function ($scope, $http, $timeout, $location) {
         }, 300);
     };
 
-    c.shareItem = function () {
+c.shareItem = function () {
         if (!c.shareTarget) {
             c.error = 'No item selected to share.';
             return;
         }
 
-        if (c.shareRecipientType === 'user' && !c.selectedUser) {
-            c.error = 'Please select a user to share with.';
+        if (c.shareRecipientType === 'user' && c.selectedUsers.length === 0) {
+            c.error = 'Please select at least one user to share with.';
             return;
         }
 
-        if (c.shareRecipientType === 'group' && !c.selectedGroup) {
-            c.error = 'Please select a group to share with.';
+        if (c.shareRecipientType === 'group' && c.selectedGroups.length === 0) {
+            c.error = 'Please select at least one group to share with.';
             return;
         }
+        
+        // Convert arrays to comma-separated strings for GlideList
+        var userIds = c.selectedUsers.map(function(u) { return u.sys_id; }).join(',');
+        var groupIds = c.selectedGroups.map(function(g) { return g.sys_id; }).join(',');
 
         c.runAction('share', {
             sys_id:          c.shareTarget.sys_id,
             type:            c.shareType,
             recipient_type:  c.shareRecipientType,
-            user_id:         c.selectedUser,
-            group_id:        c.selectedGroup,
+            user_ids:        userIds,
+            group_ids:       groupIds,
             permission:      c.sharePermission,
             expiration_date: c.shareExpirationDate || ''
         }).then(function (result) {
@@ -2969,6 +3001,40 @@ api.link = function ($scope, element) {
         grid-template-columns: 1fr;
     }
 }
+
+/* =========================================
+   MULTI-SELECT TOKENS
+========================================= */
+.fm-selected-tokens {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin: 8px 0;
+}
+
+.fm-token {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    background: #eef4ff;
+    color: #3478df;
+    border: 1px solid #cfe0ff;
+    border-radius: 14px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.fm-token i {
+    cursor: pointer;
+    font-size: 12px;
+    color: #8faeea;
+    transition: color 0.15s;
+}
+
+.fm-token i:hover {
+    color: #3478df;
+}
 </css>
         <data_table>sp_instance</data_table>
         <demo_data/>
@@ -3094,7 +3160,7 @@ api.link = function ($scope, element) {
             gr.getValue('is_deleted') === true;
     }
 
-    /** Check whether a share record is active and not expired */
+  /** Check whether a share record is active and not expired */
     function isActiveShare(share) {
         var activeVal = share.getValue('active');
         if (activeVal !== '1' && activeVal !== true && activeVal !== 'true') return false;
@@ -3112,13 +3178,17 @@ api.link = function ($scope, element) {
     function isShareForUser(share) {
         if (!isActiveShare(share)) return false;
 
-        var targetUser = share.getValue('shared_with_user');
-        if (targetUser && targetUser === userId) return true;
+        // glide_list values come back as comma separated string
+        var targetUsers = share.getValue('shared_with_user') || '';
+        if (targetUsers.indexOf(userId) > -1) return true;
 
-        var targetGroup = share.getValue('shared_with_group');
-        if (targetGroup) {
+        var targetGroups = share.getValue('shared_with_group') || '';
+        if (targetGroups) {
             try {
-                if (gs.getUser().isMemberOf(targetGroup)) return true;
+                var gList = targetGroups.split(',');
+                for (var i = 0; i < gList.length; i++) {
+                    if (gs.getUser().isMemberOf(gList[i])) return true;
+                }
             } catch (e) { /* ignore */ }
         }
 
@@ -3128,18 +3198,21 @@ api.link = function ($scope, element) {
         return false;
     }
 
-    /** Return the share permission ('Viewer'|'Editor') for current user on an item,
-     *  checking both direct user shares and group shares. */
+    /** Return the share permission ('Viewer'|'Editor') for current user on an item */
     function getDirectShare(tableField, itemId) {
         var share = new GlideRecord(SHARE_TABLE);
         share.addQuery(tableField, itemId);
         share.addQuery('active', true);
 
-        var qc = share.addQuery('shared_with_user', userId);
+        // CONTAINS effectively acts as IN for glide_list fields 
+        var qc = share.addQuery('shared_with_user', 'CONTAINS', userId);
         try {
             var myGroups = gs.getUser().getMyGroups();
             if (myGroups && myGroups.size() > 0) {
-                qc.addOrCondition('shared_with_group', 'IN', myGroups.toArray().join(','));
+                var gArr = myGroups.toArray();
+                for (var i = 0; i < gArr.length; i++) {
+                    qc.addOrCondition('shared_with_group', 'CONTAINS', gArr[i]);
+                }
             }
         } catch (e) { /* fallback */ }
 
@@ -3776,17 +3849,16 @@ api.link = function ($scope, element) {
         folder.deleteRecord();
         data.success = 'Folder permanently deleted.';
     }
-
-    /* ==================================================
-       SHARE FILE OR FOLDER
+/* ==================================================
+       SHARE FILE OR FOLDER (MULTI-SELECT GLIDE_LIST)
     ================================================== */
 
     function shareItem() {
         var type = (input.type || '');
         var itemId = (input.sys_id || '');
         var shareRecipient = (input.recipient_type || 'user'); // 'user' | 'group'
-        var targetUser = (input.user_id || '');
-        var targetGroup = (input.group_id || '');
+        var targetUsers = (input.user_ids || '');
+        var targetGroups = (input.group_ids || '');
         var permission = (input.permission || '');
         var expirationDate = (input.expiration_date || '');
 
@@ -3820,38 +3892,14 @@ api.link = function ($scope, element) {
             return;
         }
 
-        var existing = new GlideRecord(SHARE_TABLE);
-        existing.addQuery(targetField, itemId);
-
-        if (shareRecipient === 'group') {
-            if (!targetGroup) {
-                data.error = 'Please select a group.';
-                return;
-            }
-            var grp = new GlideRecord('sys_user_group');
-            if (!grp.get(targetGroup) || grp.getValue('active') !== '1') {
-                data.error = 'Selected group is not available.';
-                return;
-            }
-            existing.addQuery('shared_with_group', targetGroup);
-        } else {
-            if (!targetUser) {
-                data.error = 'Please select a user.';
-                return;
-            }
-            if (targetUser === userId) {
-                data.error = 'You cannot share an item with yourself.';
-                return;
-            }
-            var user = new GlideRecord('sys_user');
-            if (!user.get(targetUser) || user.getValue('active') !== '1') {
-                data.error = 'The selected user is not available.';
-                return;
-            }
-            existing.addQuery('shared_with_user', targetUser);
+        if (shareRecipient === 'group' && !targetGroups) {
+            data.error = 'Please select at least one group.';
+            return;
         }
-
-        existing.query();
+        if (shareRecipient === 'user' && !targetUsers) {
+            data.error = 'Please select at least one user.';
+            return;
+        }
 
         // Sanitize expiration date if provided
         var formattedExpiry = '';
@@ -3864,24 +3912,33 @@ api.link = function ($scope, element) {
             }
         }
 
+        // Look for an exact matching permission profile to append to
+        var existing = new GlideRecord(SHARE_TABLE);
+        existing.addQuery(targetField, itemId);
+        existing.addQuery('permission', permission);
+        
+        if (formattedExpiry) {
+            existing.addQuery('expiration_date', formattedExpiry);
+        } else {
+            existing.addNullQuery('expiration_date');
+        }
+        existing.query();
+
         if (existing.next()) {
+            // Found a matching share record — append new users/groups using the _mergeLists helper
             existing.setValue('active', true);
-            existing.setValue('permission', permission);
             existing.setValue('shared_by', userId);
+
             if (shareRecipient === 'group') {
-                existing.setValue('shared_with_group', targetGroup);
-                existing.setValue('shared_with_user', '');
+                var mergedGroups = _mergeLists(existing.getValue('shared_with_group'), targetGroups);
+                existing.setValue('shared_with_group', mergedGroups);
             } else {
-                existing.setValue('shared_with_user', targetUser);
-                existing.setValue('shared_with_group', '');
-            }
-            if (formattedExpiry) {
-                existing.setValue('expiration_date', formattedExpiry);
-            } else {
-                existing.setValue('expiration_date', '');
+                var mergedUsers = _mergeLists(existing.getValue('shared_with_user'), targetUsers);
+                existing.setValue('shared_with_user', mergedUsers);
             }
             existing.update();
         } else {
+            // Create a brand new Share record
             var share = new GlideRecord(SHARE_TABLE);
             share.initialize();
             share.setValue(targetField, itemId);
@@ -3889,15 +3946,16 @@ api.link = function ($scope, element) {
             if (targetField === 'folder') share.setValue('file', '');
 
             if (shareRecipient === 'group') {
-                share.setValue('shared_with_group', targetGroup);
+                share.setValue('shared_with_group', targetGroups);
                 share.setValue('shared_with_user', '');
             } else {
-                share.setValue('shared_with_user', targetUser);
+                share.setValue('shared_with_user', targetUsers);
                 share.setValue('shared_with_group', '');
             }
             share.setValue('shared_by', userId);
             share.setValue('permission', permission);
             share.setValue('active', true);
+            
             if (formattedExpiry) {
                 share.setValue('expiration_date', formattedExpiry);
             }
@@ -3909,7 +3967,7 @@ api.link = function ($scope, element) {
 
         data.success = 'Item shared successfully as ' + permission + '.';
     }
-
+	
     /* ==================================================
        LOAD WIDGET DATA
     ================================================== */
@@ -4097,6 +4155,23 @@ api.link = function ($scope, element) {
         dup.query();
         return dup.hasNext();
     }
+	
+	/** Combine existing GlideList values with incoming array elements avoiding duplicates */
+    function _mergeLists(list1, list2) {
+        var arr1 = (list1 || '').split(',').filter(function(x) { return x; });
+        var arr2 = (list2 || '').split(',').filter(function(x) { return x; });
+        var combined = arr1.concat(arr2);
+        var unique = {};
+        var res = [];
+        for (var i = 0; i < combined.length; i++) {
+            var val = combined[i].trim();
+            if (val && !unique[val]) {
+                unique[val] = true;
+                res.push(val);
+            }
+        }
+        return res.join(',');
+    }
 
 })();]]></script>
         <servicenow>false</servicenow>
@@ -4104,183 +4179,91 @@ api.link = function ($scope, element) {
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-04 11:15:08</sys_created_on>
         <sys_id>53595bdec35c5710c05a33bc0501312a</sys_id>
-        <sys_mod_count>52</sys_mod_count>
+        <sys_mod_count>67</sys_mod_count>
         <sys_name>File home</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sp_widget_53595bdec35c5710c05a33bc0501312a</sys_update_name>
         <sys_updated_by>Siva</sys_updated_by>
-        <sys_updated_on>2026-11-11 13:06:38</sys_updated_on>
+        <sys_updated_on>2026-11-12 15:21:13</sys_updated_on>
         <template><![CDATA[<div class="fm-app" ng-class="{'fm-picker': c.pickerMode}" ng-keydown="c.onKeyDown($event)" ng-click="c.closeContextMenu()">
 
   <!-- =========================================
        SIDEBAR
   ========================================= -->
-
-<!-- SIDEBAR -->
-<aside class="fm-sidebar">
-
-  <!-- LOGO -->
-  <div class="fm-logo" ng-click="c.goHome()">
-    <div class="fm-logo-icon">
-      <i class="fa fa-folder-open"></i>
+  <aside class="fm-sidebar">
+    <div class="fm-logo" ng-click="c.goHome()">
+      <div class="fm-logo-icon"><i class="fa fa-folder-open"></i></div>
+      <span>My Files</span>
     </div>
-    <span>My Files</span>
-  </div>
 
-  <!-- NEW BUTTON -->
-  <div class="fm-new-wrapper fm-sidebar-new">
-
-    <button type="button"
-            class="fm-button fm-primary fm-new-btn"
-            ng-click="c.showNewMenu = !c.showNewMenu; $event.stopPropagation()">
-
-      <i class="fa fa-plus"></i>
-      <span>New</span>
-      <i class="fa fa-angle-down"></i>
-
-    </button>
-
-    <!-- SINGLE FOLDER UPLOAD INPUT -->
-    <input type="file"
-           id="fmFolderUpload"
-           webkitdirectory
-           directory
-           multiple
-           style="display:none"
-           onchange="angular.element(this).scope().c.onFolderUploadSelected(this)">
-
-    <!-- NEW DROPDOWN -->
-    <div class="fm-new-dropdown fm-sidebar-dropdown"
-         ng-if="c.showNewMenu"
-         ng-click="$event.stopPropagation()">
-
-      <!-- NEW FOLDER -->
-      <div class="fm-new-option"
-           ng-click="c.showNewMenu = false; c.openFolderModal()">
-
-        <i class="fa fa-folder"></i>
-
-        <span>
-          <strong>New Folder</strong>
-          <small>Create a new folder</small>
-        </span>
-
+    <div class="fm-new-wrapper fm-sidebar-new">
+      <button type="button" class="fm-button fm-primary fm-new-btn" ng-click="c.showNewMenu = !c.showNewMenu; $event.stopPropagation()">
+        <i class="fa fa-plus"></i><span>New</span><i class="fa fa-angle-down"></i>
+      </button>
+      <input type="file" id="fmFolderUpload" webkitdirectory directory multiple style="display:none" onchange="angular.element(this).scope().c.onFolderUploadSelected(this)">
+      
+      <div class="fm-new-dropdown fm-sidebar-dropdown" ng-if="c.showNewMenu" ng-click="$event.stopPropagation()">
+        <div class="fm-new-option" ng-click="c.showNewMenu = false; c.openFolderModal()">
+          <i class="fa fa-folder"></i>
+          <span><strong>New Folder</strong><small>Create a new folder</small></span>
+        </div>
+        <div class="fm-new-option" ng-click="c.showNewMenu = false; c.triggerFolderUpload()">
+          <i class="fa fa-folder-open"></i>
+          <span><strong>Upload Folder</strong><small>Select a folder from your computer</small></span>
+        </div>
+        <div class="fm-new-option" ng-click="c.showNewMenu = false; c.openUploadFolderPicker()">
+          <i class="fa fa-file"></i>
+          <span><strong>New File</strong><small>Select destination and upload files</small></span>
+        </div>
       </div>
-
-      <!-- UPLOAD FOLDER -->
-      <div class="fm-new-option"
-           ng-click="c.showNewMenu = false; c.triggerFolderUpload()">
-
-        <i class="fa fa-folder-open"></i>
-
-        <span>
-          <strong>Upload Folder</strong>
-          <small>Select a folder from your computer</small>
-        </span>
-
-      </div>
-
-      <!-- NEW FILE -->
-      <div class="fm-new-option"
-           ng-click="c.showNewMenu = false; c.openUploadFolderPicker()">
-
-        <i class="fa fa-file"></i>
-
-        <span>
-          <strong>New File</strong>
-          <small>Select destination and upload files</small>
-        </span>
-
-      </div>
-
     </div>
-  </div>
 
-  <!-- WORKSPACE MENU -->
-  <div class="fm-menu">
+    <div class="fm-menu">
+      <div class="fm-menu-label">WORKSPACE</div>
+      <a ng-class="{'active': c.view == 'home'}" ng-click="c.goHome()">
+        <i class="fa fa-home"></i><span>Home</span>
+      </a>
+      <a ng-class="{'active': c.view == 'allfiles'}" ng-click="c.setView('allfiles')">
+        <i class="fa fa-files-o"></i><span>All Files</span>
+        <span class="fm-count-pill" ng-if="c.data.files.length">{{c.data.files.length}}</span>
+      </a>
+      <a ng-class="{'active': c.view == 'folders' || c.view == 'files'}" ng-click="c.setView('folders')">
+        <i class="fa fa-folder"></i><span>Folders</span>
+        <span class="fm-count-pill" ng-if="c.data.folders.length">{{c.data.folders.length}}</span>
+      </a>
+      <a ng-class="{'active': c.view == 'shared'}" ng-click="c.setView('shared')">
+        <i class="fa fa-users"></i><span>Shared with Me</span>
+        <span class="fm-count-pill" ng-if="c.data.sharedFiles.length + c.data.sharedFolders.length">{{c.data.sharedFiles.length + c.data.sharedFolders.length}}</span>
+      </a>
 
-    <div class="fm-menu-label">WORKSPACE</div>
+      <div class="fm-menu-label fm-menu-spaced">MANAGE</div>
+      <a ng-class="{'active': c.view == 'recycle'}" ng-click="c.setView('recycle')">
+        <i class="fa fa-trash"></i><span>Recycle Bin</span>
+        <span class="fm-badge" ng-if="c.data.recycleFiles.length + c.data.recycleFolders.length > 0">{{c.data.recycleFiles.length + c.data.recycleFolders.length}}</span>
+      </a>
+      <a ng-class="{'active': c.view == 'storage'}" ng-click="c.setView('storage')">
+        <i class="fa fa-database"></i><span>Storage</span>
+      </a>
+    </div>
 
-    <a ng-class="{'active': c.view == 'home'}"
-       ng-click="c.goHome()">
-      <i class="fa fa-home"></i>
-      <span>Home</span>
-    </a>
-
-    <a ng-class="{'active': c.view == 'allfiles'}"
-       ng-click="c.setView('allfiles')">
-      <i class="fa fa-files-o"></i>
-      <span>All Files</span>
-      <span class="fm-count-pill" ng-if="c.data.files.length">
-        {{c.data.files.length}}
-      </span>
-    </a>
-
-    <a ng-class="{'active': c.view == 'folders' || c.view == 'files'}"
-       ng-click="c.setView('folders')">
-      <i class="fa fa-folder"></i>
-      <span>Folders</span>
-      <span class="fm-count-pill" ng-if="c.data.folders.length">
-        {{c.data.folders.length}}
-      </span>
-    </a>
-
-    <a ng-class="{'active': c.view == 'shared'}"
-       ng-click="c.setView('shared')">
-      <i class="fa fa-users"></i>
-      <span>Shared with Me</span>
-      <span class="fm-count-pill"
-            ng-if="c.data.sharedFiles.length + c.data.sharedFolders.length">
-        {{c.data.sharedFiles.length + c.data.sharedFolders.length}}
-      </span>
-    </a>
-
-    <div class="fm-menu-label fm-menu-spaced">MANAGE</div>
-
-    <a ng-class="{'active': c.view == 'recycle'}"
-       ng-click="c.setView('recycle')">
-      <i class="fa fa-trash"></i>
-      <span>Recycle Bin</span>
-      <span class="fm-badge"
-            ng-if="c.data.recycleFiles.length + c.data.recycleFolders.length > 0">
-        {{c.data.recycleFiles.length + c.data.recycleFolders.length}}
-      </span>
-    </a>
-
-    <a ng-class="{'active': c.view == 'storage'}"
-       ng-click="c.setView('storage')">
-      <i class="fa fa-database"></i>
-      <span>Storage</span>
-    </a>
-
-  </div>
-
-  <!-- SIDEBAR FOOTER -->
-  <div class="fm-sidebar-footer">
-    <i class="fa fa-cloud"></i>
-    <span>File Manager</span>
-  </div>
-
-</aside>
+    <div class="fm-sidebar-footer">
+      <i class="fa fa-cloud"></i><span>File Manager</span>
+    </div>
+  </aside>
 
   <!-- =========================================
        MAIN CONTENT
   ========================================= -->
   <main class="fm-main">
-
-    <!-- PICKER MODE BANNER -->
-    <div ng-if="c.pickerMode"
-         style="margin:0 0 12px; padding:10px 14px; background:#eef4ff; border:1px solid #cfe0ff; border-radius:8px; font-size:12px; color:#2b4f9a; display:flex; align-items:center; gap:8px;">
+    <div ng-if="c.pickerMode" style="margin:0 0 12px; padding:10px 14px; background:#eef4ff; border:1px solid #cfe0ff; border-radius:8px; font-size:12px; color:#2b4f9a; display:flex; align-items:center; gap:8px;">
       <i class="fa fa-paperclip"></i>
       <span>Double-click a file to attach it, or tick files and click <strong>Attach selected</strong>.</span>
       <strong ng-if="c.pickBusy" style="margin-left:auto;"><i class="fa fa-spinner fa-spin"></i> Attaching...</strong>
     </div>
 
-    <!-- TOP HEADER -->
     <header class="fm-header">
-
       <div class="fm-header-title">
         <h2 ng-if="c.view == 'home'">Home</h2>
         <h2 ng-if="c.view == 'allfiles'">All Files</h2>
@@ -4289,34 +4272,18 @@ api.link = function ($scope, element) {
         <h2 ng-if="c.view == 'shared'">Shared with Me</h2>
         <h2 ng-if="c.view == 'recycle'">Recycle Bin</h2>
         <h2 ng-if="c.view == 'storage'">Storage</h2>
-
         <p>Manage your files and folders in one place.</p>
       </div>
-
       <div class="fm-header-actions">
         <div class="fm-header-search">
           <i class="fa fa-search"></i>
-          <input type="text"
-                 ng-model="c.searchText"
-                 placeholder="Search files and folders...">
-          <button class="fm-search-clear"
-                  ng-if="c.searchText"
-                  ng-click="c.searchText = ''">
-            <i class="fa fa-times"></i>
-          </button>
+          <input type="text" ng-model="c.searchText" placeholder="Search files and folders...">
+          <button class="fm-search-clear" ng-if="c.searchText" ng-click="c.searchText = ''"><i class="fa fa-times"></i></button>
         </div>
-
-        <button class="fm-refresh-btn"
-                title="Refresh"
-                ng-click="c.refresh()"
-                ng-class="{'fm-spinning': c.loading}">
-          <i class="fa fa-refresh"></i>
-        </button>
+        <button class="fm-refresh-btn" title="Refresh" ng-click="c.refresh()" ng-class="{'fm-spinning': c.loading}"><i class="fa fa-refresh"></i></button>
       </div>
-
     </header>
 
-    <!-- BREADCRUMB (shown in folder contents view) -->
     <div class="fm-breadcrumb" ng-if="c.view == 'files' && c.breadcrumb.length > 1">
       <span ng-repeat="crumb in c.breadcrumb track by $index">
         <a ng-if="!$last" ng-click="c.navigateBreadcrumb($index)">{{crumb.name}}</a>
@@ -4325,252 +4292,80 @@ api.link = function ($scope, element) {
       </span>
     </div>
 
-    <!-- ALERT MESSAGES -->
     <div class="fm-alert fm-alert-success" ng-if="c.message">
-      <i class="fa fa-check-circle"></i>
-      <span>{{c.message}}</span>
-      <button ng-click="c.message = ''">&times;</button>
+      <i class="fa fa-check-circle"></i><span>{{c.message}}</span><button ng-click="c.message = ''">&times;</button>
     </div>
-
     <div class="fm-alert fm-alert-error" ng-if="c.error">
-      <i class="fa fa-exclamation-circle"></i>
-      <span>{{c.error}}</span>
-      <button ng-click="c.error = ''">&times;</button>
+      <i class="fa fa-exclamation-circle"></i><span>{{c.error}}</span><button ng-click="c.error = ''">&times;</button>
     </div>
 
     <!-- =========================================
-         HOME VIEW
+         HOME VIEW (Welcome & Dashboard Cards)
     ========================================= -->
     <section ng-if="c.view == 'home'" class="fm-content">
-
       <div class="fm-welcome">
         <div>
           <h3>Welcome to My Files</h3>
           <p>Organize, access and share your files easily.</p>
         </div>
-        <div class="fm-welcome-icon">
-          <i class="fa fa-cloud"></i>
-        </div>
+        <div class="fm-welcome-icon"><i class="fa fa-cloud"></i></div>
       </div>
 
-      <div class="fm-stats">
-
-        <div class="fm-stat-card fm-clickable" ng-click="c.setView('folders')">
-          <div class="fm-stat-icon blue">
-            <i class="fa fa-folder"></i>
-          </div>
-          <div>
-            <span>Total Folders</span>
-            <strong>{{c.data.folders.length || 0}}</strong>
-          </div>
+      <div class="fm-stats" ng-style="{'margin-bottom': c.homeSubView ? '26px' : '0'}">
+        <div class="fm-stat-card fm-clickable" ng-click="c.setHomeSubView('folders')">
+          <div class="fm-stat-icon blue"><i class="fa fa-folder"></i></div>
+          <div><span>Total Folders</span><strong>{{c.data.folders.length || 0}}</strong></div>
         </div>
-
-        <div class="fm-stat-card fm-clickable" ng-click="c.setView('allfiles')">
-          <div class="fm-stat-icon purple">
-            <i class="fa fa-file"></i>
-          </div>
-          <div>
-            <span>Total Files</span>
-            <strong>{{c.data.files.length || 0}}</strong>
-          </div>
+        <div class="fm-stat-card fm-clickable" ng-click="c.setHomeSubView('allfiles')">
+          <div class="fm-stat-icon purple"><i class="fa fa-file"></i></div>
+          <div><span>Total Files</span><strong>{{c.data.files.length || 0}}</strong></div>
         </div>
-
-        <div class="fm-stat-card fm-clickable" ng-click="c.setView('shared')">
-          <div class="fm-stat-icon green">
-            <i class="fa fa-share-alt"></i>
-          </div>
-          <div>
-            <span>Shared Files</span>
-            <strong>{{c.data.sharedFiles.length || 0}}</strong>
-          </div>
+        <div class="fm-stat-card fm-clickable" ng-click="c.setHomeSubView('shared')">
+          <div class="fm-stat-icon green"><i class="fa fa-share-alt"></i></div>
+          <div><span>Shared Files</span><strong>{{c.data.sharedFiles.length || 0}}</strong></div>
         </div>
-
-        <div class="fm-stat-card fm-clickable" ng-click="c.setView('recycle')">
-          <div class="fm-stat-icon orange">
-            <i class="fa fa-trash"></i>
-          </div>
-          <div>
-            <span>In Recycle Bin</span>
-            <strong>{{(c.data.recycleFiles.length + c.data.recycleFolders.length) || 0}}</strong>
-          </div>
-        </div>
-
-      </div>
-
-      <!-- RECENT FOLDERS -->
-      <div class="fm-section">
-        <div class="fm-section-header">
-          <div>
-            <h3>My Folders</h3>
-            <p>Access your folders</p>
-          </div>
-          <button class="fm-button fm-primary" ng-click="c.setView('folders')">
-            View All
-          </button>
-        </div>
-
-        <div class="fm-grid" ng-if="c.data.folders.length">
-          <div class="fm-folder-card"
-               ng-repeat="folder in c.data.folders | limitTo:6"
-               ng-click="c.openFolder(folder)"
-               fm-context-type="folder"
-               fm-context-item>
-            <div class="fm-folder-main">
-              <div class="fm-folder-icon">
-                <i class="fa fa-folder"></i>
-              </div>
-              <div class="fm-card-info">
-                <strong>{{folder.folder_name}}</strong>
-                <span>{{folder.permission}}</span>
-              </div>
-            </div>
-            <i class="fa fa-angle-right fm-card-arrow"></i>
-          </div>
-        </div>
-
-        <div class="fm-empty" ng-if="!c.data.folders.length">
-          <i class="fa fa-folder-open"></i>
-          <p>No folders created yet.</p>
-          <button class="fm-button fm-primary" ng-click="c.openFolderModal()">
-            Create Folder
-          </button>
+        <div class="fm-stat-card fm-clickable" ng-click="c.setHomeSubView('recycle')">
+          <div class="fm-stat-icon orange"><i class="fa fa-trash"></i></div>
+          <div><span>In Recycle Bin</span><strong>{{(c.data.recycleFiles.length + c.data.recycleFolders.length) || 0}}</strong></div>
         </div>
       </div>
-
-      <!-- RECENT FILES -->
-      <div class="fm-section">
-        <div class="fm-section-header">
-          <div>
-            <h3>Recent Files</h3>
-            <p>Your uploaded files</p>
-          </div>
-          <button class="fm-button" ng-click="c.setView('allfiles')">
-            View All Files
-          </button>
-        </div>
-
-        <div class="fm-table-wrap" ng-if="c.data.files.length">
-          <table class="fm-table">
-            <thead>
-              <tr>
-                <th>File Name</th>
-                <th>Folder</th>
-                <th>Size</th>
-                <th>Permission</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr ng-repeat="file in c.data.files | limitTo:8"
-                  ng-dblclick="c.onRowDblClick(file)"
-                  fm-context-type="file"
-                  fm-context-item>
-                <td>
-                  <div class="fm-file-name">
-                    <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
-                    <span title="{{file.filename}}">{{file.filename}}</span>
-                  </div>
-                </td>
-                <td>
-                  <span class="fm-folder-chip"
-                        ng-if="c.getFolderName(file.folder, file)"
-                        ng-click="c.openFolderById(file.folder)">
-                    <i class="fa fa-folder"></i> {{c.getFolderName(file.folder, file)}}
-                  </span>
-                  <span ng-if="!c.getFolderName(file.folder, file)" style="color:#aaa">—</span>
-                </td>
-                <td>{{c.formatBytes(file.file_size)}}</td>
-                <td>
-                  <span class="fm-permission fm-perm-{{file.permission | lowercase}}">
-                    {{file.permission}}
-                  </span>
-                </td>
-                <td>
-                  <div class="fm-actions">
-                    <button title="Download" ng-click="c.downloadFile(file); $event.stopPropagation()">
-                      <i class="fa fa-download"></i>
-                    </button>
-                    <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file); $event.stopPropagation()">
-                      <i class="fa fa-eye"></i>
-                    </button>
-                    <button title="Share" ng-if="file.permission == 'Owner'" ng-click="c.openShare(file, 'file'); $event.stopPropagation()">
-                      <i class="fa fa-share-alt"></i>
-                    </button>
-                    <button title="Delete" ng-if="file.permission == 'Owner'" ng-click="c.confirmDeleteFile(file); $event.stopPropagation()" class="fm-del-btn">
-                      <i class="fa fa-trash"></i>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="fm-empty" ng-if="!c.data.files.length">
-          <i class="fa fa-file-o"></i>
-          <p>No files uploaded yet.</p>
-        </div>
-      </div>
-
     </section>
 
     <!-- =========================================
          ALL FILES VIEW
     ========================================= -->
-    <section ng-if="c.view == 'allfiles'" class="fm-content">
-
+    <section ng-if="c.view == 'allfiles' || (c.view == 'home' && c.homeSubView == 'allfiles')" class="fm-content">
       <div class="fm-toolbar">
         <div>
           <h3>All Files</h3>
           <p>Browse and manage all your files across all folders.</p>
         </div>
-
         <div class="fm-toolbar-actions">
-          <!-- File Type Filter -->
-          <select ng-model="c.fileTypeFilter"
-                  style="height:36px; padding:0 8px; border:1px solid #dfe5ed; border-radius:6px; background:#fff; font-size:12px; color:#536174;">
+          <select ng-model="c.fileTypeFilter" style="height:36px; padding:0 8px; border:1px solid #dfe5ed; border-radius:6px; background:#fff; font-size:12px; color:#536174;">
             <option value="">All Types</option>
             <option value="image">Images</option>
             <option value="document">Documents</option>
             <option value="pdf">PDFs</option>
             <option value="archive">Archives</option>
           </select>
-
-          <!-- Upload files (asks which folder) -->
-          <button class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()">
-            <i class="fa fa-upload"></i>
-            Upload Files
-          </button>
+          <button class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
         </div>
       </div>
-
       <div class="fm-table-wrap" ng-if="c.allFilesFiltered().length">
         <table class="fm-table">
           <thead>
             <tr>
-              <th style="width:34px;">
-                <input type="checkbox" ng-model="c.allSelected" ng-change="c.toggleSelectAllGlobal()">
-              </th>
-              <th ng-click="c.toggleSort('filename')" class="fm-sortable">
-                File Name <i class="fa" ng-class="c.getSortIcon('filename')"></i>
-              </th>
+              <th style="width:34px;"><input type="checkbox" ng-model="c.allSelected" ng-change="c.toggleSelectAllGlobal()"></th>
+              <th ng-click="c.toggleSort('filename')" class="fm-sortable">File Name <i class="fa" ng-class="c.getSortIcon('filename')"></i></th>
               <th>Folder</th>
-              <th ng-click="c.toggleSort('file_size')" class="fm-sortable">
-                Size <i class="fa" ng-class="c.getSortIcon('file_size')"></i>
-              </th>
+              <th ng-click="c.toggleSort('file_size')" class="fm-sortable">Size <i class="fa" ng-class="c.getSortIcon('file_size')"></i></th>
               <th>Permission</th>
-              <th>Actions</th>
+              <!--<th>Actions</th> -->
             </tr>
           </thead>
           <tbody>
-            <tr ng-repeat="file in c.allFilesFiltered() | orderBy:c.fileSort"
-                ng-dblclick="c.onRowDblClick(file)"
-                fm-context-type="file"
-                fm-context-item>
-              <td>
-                <input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()"
-                       ng-dblclick="$event.stopPropagation()">
-              </td>
+            <tr ng-repeat="file in c.allFilesFiltered() | orderBy:c.fileSort" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
+              <td><input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()" ng-dblclick="$event.stopPropagation()"></td>
               <td>
                 <div class="fm-file-name">
                   <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
@@ -4578,241 +4373,136 @@ api.link = function ($scope, element) {
                 </div>
               </td>
               <td>
-                <span class="fm-folder-chip"
-                      ng-if="c.getFolderName(file.folder, file)"
-                      ng-click="c.openFolderById(file.folder)">
+                <span class="fm-folder-chip" ng-if="c.getFolderName(file.folder, file)" ng-click="c.openFolderById(file.folder)">
                   <i class="fa fa-folder"></i> {{c.getFolderName(file.folder, file)}}
                 </span>
                 <span ng-if="!c.getFolderName(file.folder, file)" style="color:#aaa">—</span>
               </td>
               <td>{{c.formatBytes(file.file_size)}}</td>
-              <td>
-                <span class="fm-permission fm-perm-{{file.permission | lowercase}}">
-                  {{file.permission}}
-                </span>
-              </td>
-              <td>
+              <td><span class="fm-permission fm-perm-{{file.permission | lowercase}}">{{file.permission}}</span></td>
+              <!--<td>
                 <div class="fm-actions">
-                  <button title="Download" ng-click="c.downloadFile(file)">
-                    <i class="fa fa-download"></i>
-                  </button>
-                  <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)">
-                    <i class="fa fa-eye"></i>
-                  </button>
-                  <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)">
-                    <i class="fa fa-pencil"></i>
-                  </button>
-                  <button title="Share" ng-if="file.permission == 'Owner'" ng-click="c.openShare(file, 'file')">
-                    <i class="fa fa-share-alt"></i>
-                  </button>
-                  <button title="Delete" ng-if="file.permission == 'Owner'" ng-click="c.confirmDeleteFile(file)" class="fm-del-btn">
-                    <i class="fa fa-trash"></i>
-                  </button>
+                  <button title="Download" ng-click="c.downloadFile(file)"><i class="fa fa-download"></i></button>
+                  <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)"><i class="fa fa-eye"></i></button>
+                  <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)"><i class="fa fa-pencil"></i></button>
+                  <button title="Share" ng-if="file.permission == 'Owner'" ng-click="c.openShare(file, 'file')"><i class="fa fa-share-alt"></i></button>
+                  <button title="Delete" ng-if="file.permission == 'Owner'" ng-click="c.confirmDeleteFile(file)" class="fm-del-btn"><i class="fa fa-trash"></i></button>
                 </div>
-              </td>
+              </td> -->
             </tr>
           </tbody>
         </table>
       </div>
-
-      <!-- Bulk Actions Bar -->
       <div style="margin-top:12px; display:flex; align-items:center; gap:8px;" ng-if="c.selectedCount() > 0">
         <span style="font-size:12px; color:#3478df; font-weight:600;">{{c.selectedCount()}} selected</span>
-        <button class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()">
-          <i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}
-        </button>
+        <button class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()"><i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}</button>
         <button class="fm-button" ng-if="!c.pickerMode" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
         <button class="fm-button fm-danger" ng-if="!c.pickerMode" ng-click="c.confirmDeleteSelected()"><i class="fa fa-trash"></i> Delete Selected</button>
         <button class="fm-button" ng-click="c.clearSelection()">Clear</button>
       </div>
-
       <div class="fm-empty" ng-if="!c.allFilesFiltered().length">
-        <i class="fa fa-file-o"></i>
-        <p>No files found.</p>
-        <button class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()">
-          <i class="fa fa-upload"></i> Upload Files
-        </button>
+        <i class="fa fa-file-o"></i><p>No files found.</p>
+        <button class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
       </div>
-
     </section>
 
     <!-- =========================================
          FOLDERS VIEW
     ========================================= -->
-    <section ng-if="c.view == 'folders'" class="fm-content">
-
+    <section ng-if="c.view == 'folders' || (c.view == 'home' && c.homeSubView == 'folders')" class="fm-content">
       <div class="fm-toolbar">
         <div>
           <h3>All Folders</h3>
           <p>Manage your folders and documents.</p>
         </div>
-
         <div class="fm-toolbar-actions">
-          <button class="fm-button" ng-click="c.openUploadFolderPicker()">
-            <i class="fa fa-upload"></i>
-            Upload Files
-          </button>
-
-          <button class="fm-button fm-primary" ng-click="c.openFolderModal()">
-            <i class="fa fa-plus"></i>
-            New Folder
-          </button>
+          <button class="fm-button" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
+          <button class="fm-button fm-primary" ng-click="c.openFolderModal()"><i class="fa fa-plus"></i> New Folder</button>
         </div>
       </div>
-
       <div class="fm-grid" ng-if="c.data.folders.length">
-        <div class="fm-folder-card"
-             ng-repeat="folder in c.data.folders | filter:c.searchFolders"
-             fm-context-type="folder"
-             fm-context-item>
-
+        <div class="fm-folder-card" ng-repeat="folder in c.data.folders | filter:c.searchFolders" fm-context-type="folder" fm-context-item>
           <div class="fm-folder-main" ng-click="c.openFolder(folder)">
-            <div class="fm-folder-icon">
-              <i class="fa fa-folder"></i>
-            </div>
+            <div class="fm-folder-icon"><i class="fa fa-folder"></i></div>
             <div class="fm-card-info">
               <strong>{{folder.folder_name}}</strong>
               <span>{{folder.permission}}</span>
             </div>
           </div>
-
-          <div class="fm-card-menu">
-            <button title="Share"
-                    ng-if="folder.permission == 'Owner'"
-                    ng-click="c.openShare(folder, 'folder'); $event.stopPropagation()">
-              <i class="fa fa-share-alt"></i>
-            </button>
-            <button title="Rename"
-                    ng-if="folder.permission == 'Owner'"
-                    ng-click="c.openRenameFolder(folder); $event.stopPropagation()">
-              <i class="fa fa-pencil"></i>
-            </button>
-            <button title="Delete"
-                    ng-if="folder.permission == 'Owner'"
-                    ng-click="c.confirmDeleteFolder(folder); $event.stopPropagation()">
-              <i class="fa fa-trash"></i>
-            </button>
-          </div>
-
+          <!--<div class="fm-card-menu">
+            <button title="Share" ng-if="folder.permission == 'Owner'" ng-click="c.openShare(folder, 'folder'); $event.stopPropagation()"><i class="fa fa-share-alt"></i></button>
+            <button title="Rename" ng-if="folder.permission == 'Owner'" ng-click="c.openRenameFolder(folder); $event.stopPropagation()"><i class="fa fa-pencil"></i></button>
+            <button title="Delete" ng-if="folder.permission == 'Owner'" ng-click="c.confirmDeleteFolder(folder); $event.stopPropagation()"><i class="fa fa-trash"></i></button>
+          </div> -->
         </div>
       </div>
-
       <div class="fm-empty" ng-if="!c.data.folders.length">
-        <i class="fa fa-folder-open"></i>
-        <p>No folders available.</p>
-        <button class="fm-button fm-primary" ng-click="c.openFolderModal()">
-          Create Folder
-        </button>
+        <i class="fa fa-folder-open"></i><p>No folders available.</p>
+        <button class="fm-button fm-primary" ng-click="c.openFolderModal()">Create Folder</button>
       </div>
-
     </section>
 
     <!-- =========================================
          FOLDER CONTENTS (FILES VIEW)
     ========================================= -->
     <section ng-if="c.view == 'files'" class="fm-content">
-
       <div class="fm-toolbar">
         <div>
-          <button class="fm-back-btn" ng-click="c.navigateBack()">
-            <i class="fa fa-arrow-left"></i>
-            Back to Folders
-          </button>
-
+          <button class="fm-back-btn" ng-click="c.navigateBack()"><i class="fa fa-arrow-left"></i> Back to Folders</button>
           <h3>{{c.currentFolderName}}</h3>
           <p>Files and subfolders in this folder.</p>
         </div>
-
         <div class="fm-toolbar-actions" ng-if="c.currentFolderCanEdit()">
-          <button class="fm-button" ng-click="c.openFolderModal()">
-            <i class="fa fa-plus"></i>
-            New Subfolder
-          </button>
-
-          <!-- DIRECT UPLOAD BUTTON -->
+          <button class="fm-button" ng-click="c.openFolderModal()"><i class="fa fa-plus"></i> New Subfolder</button>
           <label class="fm-button fm-primary" ng-class="{'fm-disabled': c.uploading}">
-            <i class="fa fa-upload"></i>
-            {{c.uploading ? 'Uploading...' : 'Upload Files'}}
-            <input type="file"
-                   multiple
-                   style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;"
-                   ng-disabled="c.uploading"
-                   onchange="angular.element(this).scope().c.onDirectFilesSelected(this)">
+            <i class="fa fa-upload"></i> {{c.uploading ? 'Uploading...' : 'Upload Files'}}
+            <input type="file" multiple style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;" ng-disabled="c.uploading" onchange="angular.element(this).scope().c.onDirectFilesSelected(this)">
           </label>
         </div>
       </div>
 
-      <!-- Upload Progress -->
       <div class="fm-upload-progress" ng-if="c.uploading">
         <i class="fa fa-spinner fa-spin" style="color:#3478df;"></i>
         <span>Uploading {{c.uploadCurrentName}} ({{c.uploadIndex}}/{{c.uploadTotal}})...</span>
-        <div class="fm-upload-bar">
-          <div class="fm-upload-fill" ng-style="{'width': c.uploadProgress + '%'}"></div>
-        </div>
+        <div class="fm-upload-bar"><div class="fm-upload-fill" ng-style="{'width': c.uploadProgress + '%'}"></div></div>
       </div>
 
-      <!-- SUBFOLDERS -->
       <div class="fm-subsection" ng-if="c.foldersInCurrentFolder().length">
         <h4>Subfolders</h4>
         <div class="fm-grid">
-          <div class="fm-folder-card"
-               ng-repeat="folder in c.foldersInCurrentFolder() | filter:c.searchFolders"
-               fm-context-type="folder"
-               fm-context-item>
+          <div class="fm-folder-card" ng-repeat="folder in c.foldersInCurrentFolder() | filter:c.searchFolders" fm-context-type="folder" fm-context-item>
             <div class="fm-folder-main" ng-click="c.openFolder(folder)">
-              <div class="fm-folder-icon">
-                <i class="fa fa-folder"></i>
-              </div>
+              <div class="fm-folder-icon"><i class="fa fa-folder"></i></div>
               <div class="fm-card-info">
                 <strong>{{folder.folder_name}}</strong>
                 <span>{{folder.permission}}</span>
               </div>
             </div>
-            <div class="fm-card-menu">
-              <button title="Share" ng-if="folder.permission == 'Owner'" ng-click="c.openShare(folder, 'folder'); $event.stopPropagation()">
-                <i class="fa fa-share-alt"></i>
-              </button>
-              <button title="Rename" ng-if="folder.permission == 'Owner'" ng-click="c.openRenameFolder(folder); $event.stopPropagation()">
-                <i class="fa fa-pencil"></i>
-              </button>
-              <button title="Delete" ng-if="folder.permission == 'Owner'" ng-click="c.confirmDeleteFolder(folder); $event.stopPropagation()">
-                <i class="fa fa-trash"></i>
-              </button>
-            </div>
+            <!--<div class="fm-card-menu">
+              <button title="Share" ng-if="folder.permission == 'Owner'" ng-click="c.openShare(folder, 'folder'); $event.stopPropagation()"><i class="fa fa-share-alt"></i></button>
+              <button title="Rename" ng-if="folder.permission == 'Owner'" ng-click="c.openRenameFolder(folder); $event.stopPropagation()"><i class="fa fa-pencil"></i></button>
+              <button title="Delete" ng-if="folder.permission == 'Owner'" ng-click="c.confirmDeleteFolder(folder); $event.stopPropagation()"><i class="fa fa-trash"></i></button>
+            </div> -->
           </div>
         </div>
       </div>
 
-      <!-- FILES IN FOLDER -->
       <div class="fm-subsection">
         <h4>Files</h4>
-
         <div class="fm-table-wrap" ng-if="c.filesInCurrentFolder().length">
           <table class="fm-table">
             <thead>
               <tr>
-                <th style="width:34px;">
-                  <input type="checkbox" ng-model="c.allSelected" ng-change="c.toggleSelectAll()">
-                </th>
-                <th ng-click="c.toggleSort('filename')" class="fm-sortable">
-                  File Name <i class="fa" ng-class="c.getSortIcon('filename')"></i>
-                </th>
-                <th ng-click="c.toggleSort('file_size')" class="fm-sortable">
-                  Size <i class="fa" ng-class="c.getSortIcon('file_size')"></i>
-                </th>
+                <th style="width:34px;"><input type="checkbox" ng-model="c.allSelected" ng-change="c.toggleSelectAll()"></th>
+                <th ng-click="c.toggleSort('filename')" class="fm-sortable">File Name <i class="fa" ng-class="c.getSortIcon('filename')"></i></th>
+                <th ng-click="c.toggleSort('file_size')" class="fm-sortable">Size <i class="fa" ng-class="c.getSortIcon('file_size')"></i></th>
                 <th>Permission</th>
-                <th>Actions</th>
+               <!-- <th>Actions</th> -->
               </tr>
             </thead>
             <tbody>
-              <tr ng-repeat="file in c.filesInCurrentFolder() | filter:c.searchFiles | orderBy:c.fileSort"
-                  ng-dblclick="c.onRowDblClick(file)"
-                  fm-context-type="file"
-                  fm-context-item>
-                <td>
-                  <input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()"
-                         ng-dblclick="$event.stopPropagation()">
-                </td>
+              <tr ng-repeat="file in c.filesInCurrentFolder() | filter:c.searchFiles | orderBy:c.fileSort" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
+                <td><input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()" ng-dblclick="$event.stopPropagation()"></td>
                 <td>
                   <div class="fm-file-name">
                     <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
@@ -4820,77 +4510,49 @@ api.link = function ($scope, element) {
                   </div>
                 </td>
                 <td>{{c.formatBytes(file.file_size)}}</td>
-                <td>
-                  <span class="fm-permission fm-perm-{{file.permission | lowercase}}">
-                    {{file.permission}}
-                  </span>
-                </td>
-                <td>
+                <td><span class="fm-permission fm-perm-{{file.permission | lowercase}}">{{file.permission}}</span></td>
+               <!-- <td>
                   <div class="fm-actions">
-                    <button title="Download" ng-click="c.downloadFile(file)">
-                      <i class="fa fa-download"></i>
-                    </button>
-                    <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)">
-                      <i class="fa fa-eye"></i>
-                    </button>
-                    <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)">
-                      <i class="fa fa-pencil"></i>
-                    </button>
-                    <button title="Share" ng-if="file.permission == 'Owner'" ng-click="c.openShare(file, 'file')">
-                      <i class="fa fa-share-alt"></i>
-                    </button>
-                    <button title="Delete" ng-if="file.permission == 'Owner'" ng-click="c.confirmDeleteFile(file)" class="fm-del-btn">
-                      <i class="fa fa-trash"></i>
-                    </button>
+                    <button title="Download" ng-click="c.downloadFile(file)"><i class="fa fa-download"></i></button>
+                    <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)"><i class="fa fa-eye"></i></button>
+                    <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)"><i class="fa fa-pencil"></i></button>
+                    <button title="Share" ng-if="file.permission == 'Owner'" ng-click="c.openShare(file, 'file')"><i class="fa fa-share-alt"></i></button>
+                    <button title="Delete" ng-if="file.permission == 'Owner'" ng-click="c.confirmDeleteFile(file)" class="fm-del-btn"><i class="fa fa-trash"></i></button>
                   </div>
-                </td>
+                </td> -->
               </tr>
             </tbody>
           </table>
         </div>
-
-        <!-- Bulk Action Bar -->
         <div style="margin-top:12px; display:flex; align-items:center; gap:8px;" ng-if="c.selectedCount() > 0">
           <span style="font-size:12px; color:#3478df; font-weight:600;">{{c.selectedCount()}} selected</span>
-          <button class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()">
-            <i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}
-          </button>
+          <button class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()"><i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}</button>
           <button class="fm-button" ng-if="!c.pickerMode" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
           <button class="fm-button fm-danger" ng-if="!c.pickerMode" ng-click="c.confirmDeleteSelected()"><i class="fa fa-trash"></i> Delete Selected</button>
           <button class="fm-button" ng-click="c.clearSelection()">Clear</button>
         </div>
-
         <div class="fm-empty" ng-if="!c.filesInCurrentFolder().length">
-          <i class="fa fa-file-o"></i>
-          <p>No files in this folder.</p>
+          <i class="fa fa-file-o"></i><p>No files in this folder.</p>
         </div>
       </div>
-
     </section>
 
     <!-- =========================================
          SHARED WITH ME
     ========================================= -->
-    <section ng-if="c.view == 'shared'" class="fm-content">
-
+    <section ng-if="c.view == 'shared' || (c.view == 'home' && c.homeSubView == 'shared')" class="fm-content">
       <div class="fm-toolbar">
         <div>
           <h3>Shared with Me</h3>
           <p>Files and folders shared with you by other users.</p>
         </div>
       </div>
-
       <div class="fm-subsection">
         <h4>Shared Folders</h4>
         <div class="fm-grid" ng-if="c.data.sharedFolders.length">
-          <div class="fm-folder-card"
-               ng-repeat="folder in c.data.sharedFolders | filter:c.searchFolders"
-               fm-context-type="folder"
-               fm-context-item>
+          <div class="fm-folder-card" ng-repeat="folder in c.data.sharedFolders | filter:c.searchFolders" fm-context-type="folder" fm-context-item>
             <div class="fm-folder-main" ng-click="c.openFolder(folder)">
-              <div class="fm-folder-icon">
-                <i class="fa fa-folder"></i>
-              </div>
+              <div class="fm-folder-icon"><i class="fa fa-folder"></i></div>
               <div class="fm-card-info">
                 <strong>{{folder.folder_name}}</strong>
                 <span>{{folder.permission}}</span>
@@ -4903,7 +4565,6 @@ api.link = function ($scope, element) {
           <p>No shared folders available.</p>
         </div>
       </div>
-
       <div class="fm-subsection">
         <h4>Shared Files</h4>
         <div class="fm-table-wrap" ng-if="c.data.sharedFiles.length">
@@ -4913,14 +4574,11 @@ api.link = function ($scope, element) {
                 <th>File Name</th>
                 <th>Size</th>
                 <th>Permission</th>
-                <th>Actions</th>
+               <!-- <th>Actions</th> -->
               </tr>
             </thead>
             <tbody>
-              <tr ng-repeat="file in c.data.sharedFiles | filter:c.searchFiles"
-                  ng-dblclick="c.onRowDblClick(file)"
-                  fm-context-type="file"
-                  fm-context-item>
+              <tr ng-repeat="file in c.data.sharedFiles | filter:c.searchFiles" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
                 <td>
                   <div class="fm-file-name">
                     <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
@@ -4928,24 +4586,14 @@ api.link = function ($scope, element) {
                   </div>
                 </td>
                 <td>{{c.formatBytes(file.file_size)}}</td>
-                <td>
-                  <span class="fm-permission fm-perm-{{file.permission | lowercase}}">
-                    {{file.permission}}
-                  </span>
-                </td>
-                <td>
+                <td><span class="fm-permission fm-perm-{{file.permission | lowercase}}">{{file.permission}}</span></td>
+                <!--<td>
                   <div class="fm-actions">
-                    <button title="Download" ng-click="c.downloadFile(file)">
-                      <i class="fa fa-download"></i>
-                    </button>
-                    <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)">
-                      <i class="fa fa-eye"></i>
-                    </button>
-                    <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)">
-                      <i class="fa fa-pencil"></i>
-                    </button>
+                    <button title="Download" ng-click="c.downloadFile(file)"><i class="fa fa-download"></i></button>
+                    <button title="Preview" ng-if="c.isImage(file)" ng-click="c.preview(file)"><i class="fa fa-eye"></i></button>
+                    <button title="Edit Description" ng-if="file.can_edit" ng-click="c.openEditFile(file)"><i class="fa fa-pencil"></i></button>
                   </div>
-                </td>
+                </td> -->
               </tr>
             </tbody>
           </table>
@@ -4954,33 +4602,24 @@ api.link = function ($scope, element) {
           <p>No shared files available.</p>
         </div>
       </div>
-
     </section>
 
     <!-- =========================================
          RECYCLE BIN
     ========================================= -->
-    <section ng-if="c.view == 'recycle'" class="fm-content">
-
+    <section ng-if="c.view == 'recycle' || (c.view == 'home' && c.homeSubView == 'recycle')" class="fm-content">
       <div class="fm-toolbar">
         <div>
           <p style="margin:0; font-size:13px; color:#657386;">Restore or permanently delete items you removed.</p>
         </div>
-
         <div class="fm-toolbar-actions" ng-if="c.data.recycleFiles.length || c.data.recycleFolders.length">
-          <button class="fm-button fm-danger" ng-click="c.confirmEmptyBin()">
-            <i class="fa fa-trash"></i>
-            Empty Bin
-          </button>
+          <button class="fm-button fm-danger" ng-click="c.confirmEmptyBin()"><i class="fa fa-trash"></i> Empty Bin</button>
         </div>
       </div>
-
       <div class="fm-empty" ng-if="!c.data.recycleFiles.length && !c.data.recycleFolders.length">
-        <i class="fa fa-trash"></i>
-        <p>Recycle Bin is empty.</p>
+        <i class="fa fa-trash"></i><p>Recycle Bin is empty.</p>
       </div>
 
-      <!-- DELETED FOLDERS -->
       <div class="fm-subsection" ng-if="c.data.recycleFolders.length">
         <h4>Deleted Folders</h4>
         <div class="fm-table-wrap">
@@ -4989,13 +4628,11 @@ api.link = function ($scope, element) {
               <tr>
                 <th>Folder Name</th>
                 <th>Deleted On</th>
-                <th style="width: 250px; text-align: right;">Actions</th>
+           <!--     <th style="width: 250px; text-align: right;">Actions</th> -->
               </tr>
             </thead>
             <tbody>
-              <tr ng-repeat="folder in c.data.recycleFolders"
-                  fm-context-type="recycle_folder"
-                  fm-context-item>
+              <tr ng-repeat="folder in c.data.recycleFolders" fm-context-type="recycle_folder" fm-context-item>
                 <td>
                   <div class="fm-file-name">
                     <i class="fa fa-folder fm-file-icon" style="color:#e6a52c;"></i>
@@ -5005,12 +4642,8 @@ api.link = function ($scope, element) {
                 <td>{{folder.deleted_date || '—'}}</td>
                 <td>
                   <div class="fm-recycle-actions">
-                    <button class="fm-restore-btn" ng-click="c.restoreFolder(folder)">
-                      <i class="fa fa-undo"></i> Restore
-                    </button>
-                    <button class="fm-perm-delete-btn" ng-click="c.confirmPermanentDeleteFolder(folder)">
-                      <i class="fa fa-times"></i> Delete Permanently
-                    </button>
+                    <button class="fm-restore-btn" ng-click="c.restoreFolder(folder)"><i class="fa fa-undo"></i> Restore</button>
+                    <button class="fm-perm-delete-btn" ng-click="c.confirmPermanentDeleteFolder(folder)"><i class="fa fa-times"></i> Delete Permanently</button>
                   </div>
                 </td>
               </tr>
@@ -5018,8 +4651,6 @@ api.link = function ($scope, element) {
           </table>
         </div>
       </div>
-
-      <!-- DELETED FILES -->
       <div class="fm-subsection" ng-if="c.data.recycleFiles.length">
         <h4>Deleted Files</h4>
         <div class="fm-table-wrap">
@@ -5029,13 +4660,11 @@ api.link = function ($scope, element) {
                 <th>File Name</th>
                 <th>Size</th>
                 <th>Deleted On</th>
-                <th style="width: 250px; text-align: right;">Actions</th>
+              <!--  <th style="width: 250px; text-align: right;">Actions</th>-->
               </tr>
             </thead>
             <tbody>
-              <tr ng-repeat="file in c.data.recycleFiles"
-                  fm-context-type="recycle_file"
-                  fm-context-item>
+              <tr ng-repeat="file in c.data.recycleFiles" fm-context-type="recycle_file" fm-context-item>
                 <td>
                   <div class="fm-file-name">
                     <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
@@ -5046,12 +4675,8 @@ api.link = function ($scope, element) {
                 <td>{{file.deleted_date || '—'}}</td>
                 <td>
                   <div class="fm-recycle-actions">
-                    <button class="fm-restore-btn" ng-click="c.restoreFile(file)">
-                      <i class="fa fa-undo"></i> Restore
-                    </button>
-                    <button class="fm-perm-delete-btn" ng-click="c.confirmPermanentDeleteFile(file)">
-                      <i class="fa fa-times"></i> Delete Permanently
-                    </button>
+                    <button class="fm-restore-btn" ng-click="c.restoreFile(file)"><i class="fa fa-undo"></i> Restore</button>
+                    <button class="fm-perm-delete-btn" ng-click="c.confirmPermanentDeleteFile(file)"><i class="fa fa-times"></i> Delete Permanently</button>
                   </div>
                 </td>
               </tr>
@@ -5059,58 +4684,38 @@ api.link = function ($scope, element) {
           </table>
         </div>
       </div>
-
     </section>
 
     <!-- =========================================
          STORAGE
     ========================================= -->
     <section ng-if="c.view == 'storage'" class="fm-content">
-
       <div class="fm-toolbar">
         <div>
           <h3>Storage Overview</h3>
           <p>Summary of your uploaded files and storage usage.</p>
         </div>
       </div>
-
       <div class="fm-storage-card">
-        <div class="fm-storage-icon">
-          <i class="fa fa-database"></i>
-        </div>
+        <div class="fm-storage-icon"><i class="fa fa-database"></i></div>
         <div>
           <h3>Your File Storage</h3>
           <p>Summary of active files owned by you.</p>
         </div>
       </div>
-
       <div class="fm-stats" style="grid-template-columns: repeat(2, minmax(0,1fr));">
         <div class="fm-stat-card">
-          <div class="fm-stat-icon blue">
-            <i class="fa fa-file"></i>
-          </div>
-          <div>
-            <span>Total Files</span>
-            <strong>{{c.data.storage.fileCount || 0}}</strong>
-          </div>
+          <div class="fm-stat-icon blue"><i class="fa fa-file"></i></div>
+          <div><span>Total Files</span><strong>{{c.data.storage.fileCount || 0}}</strong></div>
         </div>
-
         <div class="fm-stat-card">
-          <div class="fm-stat-icon green">
-            <i class="fa fa-hdd-o"></i>
-          </div>
-          <div>
-            <span>Total File Size</span>
-            <strong>{{c.formatBytes(c.data.storage.totalBytes)}}</strong>
-          </div>
+          <div class="fm-stat-icon green"><i class="fa fa-hdd-o"></i></div>
+          <div><span>Total File Size</span><strong>{{c.formatBytes(c.data.storage.totalBytes)}}</strong></div>
         </div>
       </div>
-
       <div class="fm-section" ng-if="c.data.storage.byType.length">
         <div class="fm-section-header">
-          <div>
-            <h3>Storage by File Type</h3>
-          </div>
+          <div><h3>Storage by File Type</h3></div>
         </div>
         <div class="fm-table-wrap">
           <table class="fm-table">
@@ -5123,9 +4728,7 @@ api.link = function ($scope, element) {
             </thead>
             <tbody>
               <tr ng-repeat="row in c.data.storage.byType | orderBy:'-totalBytes'">
-                <td>
-                  <span class="fm-ext-badge">{{row.ext || 'unknown'}}</span>
-                </td>
+                <td><span class="fm-ext-badge">{{row.ext || 'unknown'}}</span></td>
                 <td>{{row.count}}</td>
                 <td>{{c.formatBytes(row.totalBytes)}}</td>
               </tr>
@@ -5133,412 +4736,160 @@ api.link = function ($scope, element) {
           </table>
         </div>
       </div>
-
-      <p class="fm-storage-note">
-        This is the total size of your active File Manager records.
-        It is not the instance-wide ServiceNow storage quota.
-      </p>
-
+      <p class="fm-storage-note">This is the total size of your active File Manager records. It is not the instance-wide ServiceNow storage quota.</p>
     </section>
-
   </main>
 
   <!-- =========================================
-       UPLOAD DESTINATION FOLDER PICKER MODAL
+       MODALS
   ========================================= -->
   <div class="fm-modal-backdrop" ng-if="c.showUploadFolderPicker">
     <div class="fm-modal" ng-click="$event.stopPropagation()">
-
       <div class="fm-modal-header">
-        <h3>Upload Files</h3>
-        <button ng-click="c.showUploadFolderPicker = false">&times;</button>
+        <h3>Upload Files</h3><button ng-click="c.showUploadFolderPicker = false">&times;</button>
       </div>
-
-      <p style="margin:0 0 10px; font-size:12px; color:#536174;">
-        Select the destination folder where you want to upload the files:
-      </p>
-
+      <p style="margin:0 0 10px; font-size:12px; color:#536174;">Select the destination folder where you want to upload the files:</p>
       <div class="fm-folder-picker-list">
-        <div class="fm-folder-picker-item"
-             ng-repeat="folder in c.editableFolders() | orderBy:'folder_name'"
-             ng-class="{'selected': c.targetUploadFolder == folder.sys_id}"
-             ng-click="c.targetUploadFolder = folder.sys_id; c.targetUploadFolderName = folder.folder_name">
+        <div class="fm-folder-picker-item" ng-repeat="folder in c.editableFolders() | orderBy:'folder_name'" ng-class="{'selected': c.targetUploadFolder == folder.sys_id}" ng-click="c.targetUploadFolder = folder.sys_id; c.targetUploadFolderName = folder.folder_name">
           <i class="fa fa-folder"></i>
           <span class="fm-folder-picker-name">{{folder.folder_name}}</span>
           <span class="fm-folder-picker-perm">{{folder.permission}}</span>
           <i class="fa fa-check fm-folder-picker-check" ng-if="c.targetUploadFolder == folder.sys_id"></i>
         </div>
-
-        <div style="padding:16px; text-align:center; color:#98a4b2; font-size:12px;"
-             ng-if="!c.editableFolders().length">
-          No folders available. Please create a folder first.
-        </div>
+        <div style="padding:16px; text-align:center; color:#98a4b2; font-size:12px;" ng-if="!c.editableFolders().length">No folders available. Please create a folder first.</div>
       </div>
-
-      <a class="fm-picker-new-link"
-         ng-click="c.showUploadFolderPicker = false; c.openFolderModal()">
-        <i class="fa fa-plus"></i> Create a new folder
-      </a>
-
+      <a class="fm-picker-new-link" ng-click="c.showUploadFolderPicker = false; c.openFolderModal()"><i class="fa fa-plus"></i> Create a new folder</a>
       <div class="fm-modal-actions">
-        <button class="fm-button" ng-click="c.showUploadFolderPicker = false">
-          Cancel
-        </button>
-
-        <label class="fm-button fm-primary"
-               ng-class="{'fm-disabled': !c.targetUploadFolder || c.uploading}">
-          <i class="fa fa-upload"></i>
-          {{c.uploading ? 'Uploading...' : 'Choose Files & Upload'}}
-          <input type="file"
-                 multiple
-                 style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;"
-                 ng-disabled="!c.targetUploadFolder || c.uploading"
-                 onchange="angular.element(this).scope().c.onPickerFilesSelected(this)">
+        <button class="fm-button" ng-click="c.showUploadFolderPicker = false">Cancel</button>
+        <label class="fm-button fm-primary" ng-class="{'fm-disabled': !c.targetUploadFolder || c.uploading}">
+          <i class="fa fa-upload"></i> {{c.uploading ? 'Uploading...' : 'Choose Files & Upload'}}
+          <input type="file" multiple style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;" ng-disabled="!c.targetUploadFolder || c.uploading" onchange="angular.element(this).scope().c.onPickerFilesSelected(this)">
         </label>
       </div>
-
     </div>
   </div>
 
-  <!-- =========================================
-       CREATE / RENAME FOLDER MODAL
-  ========================================= -->
-  <div class="fm-modal-backdrop" ng-if="c.showFolderModal">
-    <div class="fm-modal" ng-click="$event.stopPropagation()">
-
-      <div class="fm-modal-header">
-        <h3>{{c.editFolderTarget ? 'Rename Folder' : 'Create New Folder'}}</h3>
-        <button ng-click="c.closeFolderModal()">&times;</button>
-      </div>
-
-      <label>Folder Name</label>
-      <input type="text"
-             ng-model="c.newFolderName"
-             maxlength="40"
-             placeholder="Enter folder name"
-             ng-keyup="c.onFolderNameKey($event)"
-             autofocus>
-      <div class="fm-char-count">{{(c.newFolderName || '').length}}/40</div>
-
-      <label ng-if="!c.editFolderTarget">Description</label>
-      <textarea ng-if="!c.editFolderTarget"
-                ng-model="c.newFolderDescription"
-                rows="3"
-                maxlength="1000"
-                placeholder="Enter folder description">
-      </textarea>
-
-      <div class="fm-modal-actions">
-        <button class="fm-button" ng-click="c.closeFolderModal()">
-          Cancel
-        </button>
-
-        <button class="fm-button fm-primary"
-                ng-click="c.editFolderTarget ? c.renameFolder() : c.createFolder()"
-                ng-disabled="!(c.newFolderName || '').trim()">
-          <i class="fa" ng-class="c.editFolderTarget ? 'fa-check' : 'fa-plus'"></i>
-          {{c.editFolderTarget ? 'Save' : 'Create Folder'}}
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- =========================================
-       SHARE MODAL
-  ========================================= -->
-  <div class="fm-modal-backdrop" ng-if="c.showShareModal">
+<div class="fm-modal-backdrop" ng-if="c.showShareModal">
     <div class="fm-modal fm-share-modal" ng-click="$event.stopPropagation()">
-
       <div class="fm-modal-header">
-        <h3>Share {{c.shareType == 'file' ? 'File' : 'Folder'}}</h3>
-        <button ng-click="c.showShareModal = false">&times;</button>
+        <h3>Share {{c.shareType == 'file' ? 'File' : 'Folder'}}</h3><button ng-click="c.showShareModal = false">&times;</button>
       </div>
-
       <div style="padding:8px 12px; background:#f8fafd; border:1px solid #e9edf2; border-radius:6px; font-size:12px; margin-bottom:12px; display:flex; align-items:center; gap:8px;">
         <i class="fa" ng-class="c.shareType == 'file' ? 'fa-file-o' : 'fa-folder'" style="color:#3478df;"></i>
         <strong>{{c.shareTarget ? (c.shareTarget.filename || c.shareTarget.folder_name) : ''}}</strong>
       </div>
-
-      <!-- SHARE WITH USER OR GROUP TOGGLE -->
+      
       <label>Share With</label>
       <div style="display:flex; gap:8px; margin-bottom:10px;">
-        <button type="button"
-                class="fm-button"
-                style="flex:1;"
-                ng-class="{'fm-primary': c.shareRecipientType == 'user'}"
-                ng-click="c.setShareRecipientType('user')">
-          <i class="fa fa-user"></i> User
-        </button>
-        <button type="button"
-                class="fm-button"
-                style="flex:1;"
-                ng-class="{'fm-primary': c.shareRecipientType == 'group'}"
-                ng-click="c.setShareRecipientType('group')">
-          <i class="fa fa-users"></i> Group
-        </button>
+        <button type="button" class="fm-button" style="flex:1;" ng-class="{'fm-primary': c.shareRecipientType == 'user'}" ng-click="c.setShareRecipientType('user')"><i class="fa fa-user"></i> Users</button>
+        <button type="button" class="fm-button" style="flex:1;" ng-class="{'fm-primary': c.shareRecipientType == 'group'}" ng-click="c.setShareRecipientType('group')"><i class="fa fa-users"></i> Groups</button>
       </div>
 
-      <!-- SEARCH USER -->
+      <!-- USER SELECTION -->
       <div ng-if="c.shareRecipientType == 'user'">
-        <label style="margin-top:0;">Search User</label>
+        <!-- Selected Tokens -->
+        <div class="fm-selected-tokens" ng-if="c.selectedUsers.length > 0">
+          <span class="fm-token" ng-repeat="u in c.selectedUsers track by $index">
+            {{u.name}} <i class="fa fa-times" ng-click="c.removeUser($index)"></i>
+          </span>
+        </div>
+
+        <label style="margin-top:0;">Search Users</label>
         <div class="fm-user-search">
           <i class="fa fa-search"></i>
-          <input type="text"
-                 ng-model="c.userSearchText"
-                 ng-change="c.searchUsers()"
-                 placeholder="Search by name, username or email...">
+          <input type="text" ng-model="c.userSearchText" ng-change="c.searchUsers()" placeholder="Search by name, username or email...">
         </div>
         <p class="fm-search-help">Enter at least 2 characters to search active users.</p>
-
-        <div class="fm-user-status" ng-if="c.userSearchLoading">
-          <i class="fa fa-spinner fa-spin"></i> Searching users...
-        </div>
-
-        <div class="fm-user-status fm-user-error" ng-if="c.userSearchError">
-          {{c.userSearchError}}
-        </div>
-
+        <div class="fm-user-status" ng-if="c.userSearchLoading"><i class="fa fa-spinner fa-spin"></i> Searching users...</div>
+        <div class="fm-user-status fm-user-error" ng-if="c.userSearchError">{{c.userSearchError}}</div>
+        
         <div class="fm-user-results" ng-if="c.data.users.length && !c.userSearchLoading">
-          <div class="fm-user-option"
-               ng-repeat="user in c.data.users"
-               ng-class="{'fm-user-selected': c.selectedUser == user.sys_id}"
-               ng-click="c.selectedUser = user.sys_id">
+          <div class="fm-user-option" ng-repeat="user in c.data.users" ng-class="{'fm-user-selected': c.isUserSelected(user.sys_id)}" ng-click="c.addUser(user)">
             <div class="fm-user-avatar">{{(user.name || 'U').charAt(0).toUpperCase()}}</div>
             <div class="fm-user-info">
-              <strong>{{user.name}}</strong>
-              <span>{{user.user_name}} · {{user.email}}</span>
+              <strong>{{user.name}}</strong><span>{{user.user_name}} &middot; {{user.email}}</span>
             </div>
-            <i class="fa fa-check" style="color:#3478df;" ng-if="c.selectedUser == user.sys_id"></i>
+            <i class="fa fa-check" style="color:#3478df;" ng-if="c.isUserSelected(user.sys_id)"></i>
           </div>
         </div>
       </div>
 
-      <!-- SEARCH GROUP -->
+      <!-- GROUP SELECTION -->
       <div ng-if="c.shareRecipientType == 'group'">
-        <label style="margin-top:0;">Search Group</label>
+        <!-- Selected Tokens -->
+        <div class="fm-selected-tokens" ng-if="c.selectedGroups.length > 0">
+          <span class="fm-token" ng-repeat="g in c.selectedGroups track by $index">
+            {{g.name}} <i class="fa fa-times" ng-click="c.removeGroup($index)"></i>
+          </span>
+        </div>
+
+        <label style="margin-top:0;">Search Groups</label>
         <div class="fm-user-search">
           <i class="fa fa-search"></i>
-          <input type="text"
-                 ng-model="c.groupSearchText"
-                 ng-change="c.searchGroups()"
-                 placeholder="Search by group name...">
+          <input type="text" ng-model="c.groupSearchText" ng-change="c.searchGroups()" placeholder="Search by group name...">
         </div>
         <p class="fm-search-help">Enter at least 2 characters to search active groups.</p>
-
-        <div class="fm-user-status" ng-if="c.groupSearchLoading">
-          <i class="fa fa-spinner fa-spin"></i> Searching groups...
-        </div>
-
-        <div class="fm-user-status fm-user-error" ng-if="c.groupSearchError">
-          {{c.groupSearchError}}
-        </div>
-
+        <div class="fm-user-status" ng-if="c.groupSearchLoading"><i class="fa fa-spinner fa-spin"></i> Searching groups...</div>
+        <div class="fm-user-status fm-user-error" ng-if="c.groupSearchError">{{c.groupSearchError}}</div>
+        
         <div class="fm-user-results" ng-if="c.data.groups.length && !c.groupSearchLoading">
-          <div class="fm-user-option"
-               ng-repeat="group in c.data.groups"
-               ng-class="{'fm-user-selected': c.selectedGroup == group.sys_id}"
-               ng-click="c.selectedGroup = group.sys_id">
+          <div class="fm-user-option" ng-repeat="group in c.data.groups" ng-class="{'fm-user-selected': c.isGroupSelected(group.sys_id)}" ng-click="c.addGroup(group)">
             <div class="fm-user-avatar" style="background:#7b1fa2;"><i class="fa fa-users" style="font-size:12px;"></i></div>
             <div class="fm-user-info">
-              <strong>{{group.name}}</strong>
-              <span ng-if="group.description">{{group.description}}</span>
+              <strong>{{group.name}}</strong><span ng-if="group.description">{{group.description}}</span>
             </div>
-            <i class="fa fa-check" style="color:#3478df;" ng-if="c.selectedGroup == group.sys_id"></i>
+            <i class="fa fa-check" style="color:#3478df;" ng-if="c.isGroupSelected(group.sys_id)"></i>
           </div>
         </div>
       </div>
 
-      <!-- PERMISSION LEVEL -->
       <label>Permission</label>
       <select ng-model="c.sharePermission">
         <option value="Viewer">Viewer</option>
         <option value="Editor">Editor</option>
       </select>
-
-      <!-- OPTIONAL EXPIRATION DATE -->
+      
       <label>Expiration Date <span style="font-size:11px; font-weight:normal; color:#8a96a5;">(Optional)</span></label>
-      <input type="datetime-local"
-             ng-model="c.shareExpirationDate"
-             style="width:100%; min-height:38px; padding:8px 11px; border:1px solid #dce3eb; border-radius:6px; font-size:12px; color:#344256;"
-             placeholder="Select expiration date">
+      <input type="datetime-local" ng-model="c.shareExpirationDate" style="width:100%; min-height:38px; padding:8px 11px; border:1px solid #dce3eb; border-radius:6px; font-size:12px; color:#344256;" placeholder="Select expiration date">
       <p style="margin:4px 0 0; font-size:11px; color:#8a96a5;">Leave empty for unlimited access.</p>
-
+      
       <div class="fm-modal-actions">
-        <button class="fm-button" ng-click="c.showShareModal = false">
-          Cancel
-        </button>
-        <button class="fm-button fm-primary"
-                ng-click="c.shareItem()"
-                ng-disabled="(c.shareRecipientType == 'user' && !c.selectedUser) || (c.shareRecipientType == 'group' && !c.selectedGroup)">
+        <button class="fm-button" ng-click="c.showShareModal = false">Cancel</button>
+        <button class="fm-button fm-primary" ng-click="c.shareItem()" ng-disabled="(c.shareRecipientType == 'user' && c.selectedUsers.length == 0) || (c.shareRecipientType == 'group' && c.selectedGroups.length == 0)">
           <i class="fa fa-share-alt"></i> Share
         </button>
       </div>
-
     </div>
   </div>
 
-  <!-- =========================================
-       EDIT FILE DESCRIPTION MODAL
-  ========================================= -->
-  <div class="fm-modal-backdrop" ng-if="c.showEditFileModal">
-    <div class="fm-modal" ng-click="$event.stopPropagation()">
-
-      <div class="fm-modal-header">
-        <h3>Edit File Description</h3>
-        <button ng-click="c.showEditFileModal = false">&times;</button>
-      </div>
-
-      <p style="font-size:12px; font-weight:600; color:#344256; margin:0 0 10px;">
-        {{c.editFileTarget ? c.editFileTarget.filename : ''}}
-      </p>
-
-      <label>Description</label>
-      <textarea ng-model="c.editFileDescription"
-                rows="4"
-                maxlength="1000"
-                placeholder="Enter file description...">
-      </textarea>
-
-      <div class="fm-modal-actions">
-        <button class="fm-button" ng-click="c.showEditFileModal = false">Cancel</button>
-        <button class="fm-button fm-primary" ng-click="c.saveEditFile()">
-          <i class="fa fa-check"></i> Save
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- =========================================
-       CONFIRMATION MODAL
-  ========================================= -->
-  <div class="fm-modal-backdrop" ng-if="c.confirmModal.show">
-    <div class="fm-modal fm-confirm-modal" ng-click="$event.stopPropagation()">
-
-      <div class="fm-modal-header">
-        <h3>{{c.confirmModal.title}}</h3>
-        <button ng-click="c.confirmModal.show = false">&times;</button>
-      </div>
-
-      <p class="fm-confirm-text">{{c.confirmModal.message}}</p>
-
-      <div class="fm-modal-actions">
-        <button class="fm-button" ng-click="c.confirmModal.show = false">
-          Cancel
-        </button>
-        <button class="fm-button"
-                ng-class="c.confirmModal.danger ? 'fm-danger' : 'fm-primary'"
-                ng-click="c.confirmModal.onConfirm(); c.confirmModal.show = false">
-          <i class="fa" ng-class="c.confirmModal.icon || 'fa-check'"></i>
-          {{c.confirmModal.confirmLabel || 'Confirm'}}
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- =========================================
-       IMAGE PREVIEW MODAL
-  ========================================= -->
-  <div class="fm-modal-backdrop fm-preview-backdrop" ng-if="c.previewFile">
-    <div class="fm-preview-modal" ng-click="$event.stopPropagation()">
-
-      <div class="fm-preview-header">
-        <strong>{{c.previewFile.filename}}</strong>
-        <button ng-click="c.closePreview()">&times;</button>
-      </div>
-
-      <div class="fm-preview-content">
-        <img ng-if="c.previewFile.attachment_id"
-             ng-src="/sys_attachment.do?sys_id={{c.previewFile.attachment_id}}"
-             alt="{{c.previewFile.filename}}">
-      </div>
-
-      <div class="fm-preview-footer">
-        <button class="fm-button" ng-click="c.downloadFile(c.previewFile)">
-          <i class="fa fa-download"></i> Download
-        </button>
-        <button class="fm-button" ng-click="c.closePreview()">
-          Close
-        </button>
-      </div>
-
-    </div>
-  </div>
-
-  <!-- =========================================
-       RIGHT-CLICK CONTEXT MENU
-  ========================================= -->
-  <div class="fm-context-menu"
-       ng-if="c.contextMenu.show"
-       ng-style="{'top': c.contextMenu.y + 'px', 'left': c.contextMenu.x + 'px'}"
-       ng-click="$event.stopPropagation()">
-
-    <!-- FILE CONTEXT MENU -->
+  <div class="fm-context-menu" ng-if="c.contextMenu.show" ng-style="{'top': c.contextMenu.y + 'px', 'left': c.contextMenu.x + 'px'}" ng-click="$event.stopPropagation()">
     <div ng-if="c.contextMenu.type == 'file'">
-      <div class="fm-context-item" ng-click="c.downloadFile(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-download"></i> Download
-      </div>
-      <div class="fm-context-item" ng-if="c.isImage(c.contextMenu.item)" ng-click="c.preview(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-eye"></i> Preview
-      </div>
-      <div class="fm-context-item" ng-if="c.contextMenu.item.folder" ng-click="c.openFolderById(c.contextMenu.item.folder); c.closeContextMenu()">
-        <i class="fa fa-folder-open"></i> Go to Folder
-      </div>
-      <div class="fm-context-item" ng-if="c.contextMenu.item.can_edit" ng-click="c.openEditFile(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-pencil"></i> Edit Description
-      </div>
-      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openShare(c.contextMenu.item, 'file'); c.closeContextMenu()">
-        <i class="fa fa-share-alt"></i> Share
-      </div>
+      <div class="fm-context-item" ng-click="c.downloadFile(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-download"></i> Download</div>
+      <div class="fm-context-item" ng-if="c.isImage(c.contextMenu.item)" ng-click="c.preview(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-eye"></i> Preview</div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.folder" ng-click="c.openFolderById(c.contextMenu.item.folder); c.closeContextMenu()"><i class="fa fa-folder-open"></i> Go to Folder</div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.can_edit" ng-click="c.openEditFile(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-pencil"></i> Edit Description</div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openShare(c.contextMenu.item, 'file'); c.closeContextMenu()"><i class="fa fa-share-alt"></i> Share</div>
       <div class="fm-context-divider" ng-if="c.contextMenu.item.permission == 'Owner'"></div>
-      <div class="fm-context-item danger" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.confirmDeleteFile(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-trash"></i> Move to Bin
-      </div>
+      <div class="fm-context-item danger" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.confirmDeleteFile(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-trash"></i> Move to Bin</div>
     </div>
-
-    <!-- FOLDER CONTEXT MENU -->
     <div ng-if="c.contextMenu.type == 'folder'">
-      <div class="fm-context-item" ng-click="c.openFolder(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-folder-open"></i> Open Folder
-      </div>
-      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openRenameFolder(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-pencil"></i> Rename
-      </div>
-      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openShare(c.contextMenu.item, 'folder'); c.closeContextMenu()">
-        <i class="fa fa-share-alt"></i> Share
-      </div>
+      <div class="fm-context-item" ng-click="c.openFolder(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-folder-open"></i> Open Folder</div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openRenameFolder(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-pencil"></i> Rename</div>
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.openShare(c.contextMenu.item, 'folder'); c.closeContextMenu()"><i class="fa fa-share-alt"></i> Share</div>
       <div class="fm-context-divider" ng-if="c.contextMenu.item.permission == 'Owner'"></div>
-      <div class="fm-context-item danger" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.confirmDeleteFolder(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-trash"></i> Move to Bin
-      </div>
+      <div class="fm-context-item danger" ng-if="c.contextMenu.item.permission == 'Owner'" ng-click="c.confirmDeleteFolder(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-trash"></i> Move to Bin</div>
     </div>
-
-    <!-- RECYCLE FILE CONTEXT MENU -->
     <div ng-if="c.contextMenu.type == 'recycle_file'">
-      <div class="fm-context-item" ng-click="c.restoreFile(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-undo"></i> Restore
-      </div>
+      <div class="fm-context-item" ng-click="c.restoreFile(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-undo"></i> Restore</div>
       <div class="fm-context-divider"></div>
-      <div class="fm-context-item danger" ng-click="c.confirmPermanentDeleteFile(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-times"></i> Delete Permanently
-      </div>
+      <div class="fm-context-item danger" ng-click="c.confirmPermanentDeleteFile(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-times"></i> Delete Permanently</div>
     </div>
-
-    <!-- RECYCLE FOLDER CONTEXT MENU -->
     <div ng-if="c.contextMenu.type == 'recycle_folder'">
-      <div class="fm-context-item" ng-click="c.restoreFolder(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-undo"></i> Restore
-      </div>
+      <div class="fm-context-item" ng-click="c.restoreFolder(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-undo"></i> Restore</div>
       <div class="fm-context-divider"></div>
-      <div class="fm-context-item danger" ng-click="c.confirmPermanentDeleteFolder(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-times"></i> Delete Permanently
-      </div>
+      <div class="fm-context-item danger" ng-click="c.confirmPermanentDeleteFolder(c.contextMenu.item); c.closeContextMenu()"><i class="fa fa-times"></i> Delete Permanently</div>
     </div>
-
   </div>
-
 </div>]]></template>
     </sp_widget>
     <sys_es_latest_script action="INSERT_OR_UPDATE">
