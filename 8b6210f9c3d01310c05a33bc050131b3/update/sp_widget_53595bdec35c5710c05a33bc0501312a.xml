@@ -14,6 +14,9 @@ api.controller = function ($scope, $http, $timeout, $location) {
     =================================================== */
     c.view              = 'home';   // 'home' | 'allfiles' | 'folders' | 'files' | 'shared' | 'recycle' | 'storage'
     c.homeSubView       = '';
+    c.sharedView        = 'withMe'; // 'withMe' | 'byMe'
+    c.pageSize          = 10;
+    c.currentPages      = { allFiles: 1, rootFolders: 1, childFolders: 1, folderFiles: 1, sharedFolders: 1, sharedFiles: 1 };
     c.currentFolder     = '';
     c.currentFolderName = '';
     c.searchText        = '';
@@ -46,7 +49,6 @@ api.controller = function ($scope, $http, $timeout, $location) {
     c.shareRecipientType  = 'user';
     c.selectedUsers       = [];
     c.selectedGroups      = [];
-    c.sharePermission     = 'Viewer';
     c.shareExpirationDate = null;
     c.shareTarget         = null;
     c.shareType           = 'file';
@@ -167,9 +169,17 @@ api.controller = function ($scope, $http, $timeout, $location) {
         c.closeContextMenu();
     }
 
-    c.setHomeSubView = function (subView) { _resetNav('home', subView); };
+    c.setHomeSubView = function (subView) {
+        _resetNav('home', subView);
+        if (subView === 'shared') c.sharedView = 'withMe';
+        c.resetPagination();
+    };
     c.goHome         = function ()        { _resetNav('home', ''); };
-    c.setView        = function (view)    { _resetNav(view, ''); };
+    c.setView        = function (view) {
+        _resetNav(view, '');
+        if (view === 'shared') c.sharedView = 'withMe';
+        c.resetPagination();
+    };
 
     /** Build [root, ...ancestors, folder] crumbs by walking parent_folder links */
     function _buildCrumbs(folder) {
@@ -203,6 +213,7 @@ api.controller = function ($scope, $http, $timeout, $location) {
         c.view              = 'files';
         c.homeSubView       = '';
         c.searchText        = '';
+        c.resetPagination();
         _clearAlerts();
         _clearSelection();
         c.closeContextMenu();
@@ -336,6 +347,60 @@ api.controller = function ($scope, $http, $timeout, $location) {
         if (!c.searchText) return true;
         return (folder.folder_name || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
     };
+    /* ===================================================
+       CLIENT-SIDE PAGINATION
+       Pagination is applied after filtering/sorting so search
+       and sort work across the complete result set.
+    =================================================== */
+    c.pageItems = function (list, key) {
+        list = list || [];
+        var page = c.currentPages[key] || 1;
+        var start = (page - 1) * c.pageSize;
+        return list.slice(start, start + c.pageSize);
+    };
+
+    c.pageCount = function (list) {
+        return Math.max(1, Math.ceil((list || []).length / c.pageSize));
+    };
+
+    c.pageInfo = function (list, key) {
+        list = list || [];
+        var total = list.length;
+        var pages = c.pageCount(list);
+        var page = Math.min(c.currentPages[key] || 1, pages);
+        if (page !== c.currentPages[key]) c.currentPages[key] = page;
+        return {
+            page: page,
+            pages: pages,
+            total: total,
+            start: total ? ((page - 1) * c.pageSize) + 1 : 0,
+            end: Math.min(page * c.pageSize, total)
+        };
+    };
+
+    c.goToPage = function (key, page) {
+        c.currentPages[key] = Math.max(1, page || 1);
+    };
+    c.previousPage = function (list, key) {
+        c.goToPage(key, (c.currentPages[key] || 1) - 1);
+    };
+    c.nextPage = function (list, key) {
+        c.goToPage(key, (c.currentPages[key] || 1) + 1);
+    };
+    c.resetPagination = function () {
+        Object.keys(c.currentPages).forEach(function (key) { c.currentPages[key] = 1; });
+    };
+    c.setSharedView = function (view) {
+        c.sharedView = view === 'byMe' ? 'byMe' : 'withMe';
+        c.resetPagination();
+        _clearSelection();
+    };
+
+    $scope.$watch(function () {
+        return c.searchText + '|' + c.fileTypeFilter + '|' + c.pageSize + '|' + c.fileSort;
+    }, function (n, o) {
+        if (n !== o) c.resetPagination();
+    });
 
     /* ===================================================
        SORTING
@@ -629,7 +694,6 @@ api.controller = function ($scope, $http, $timeout, $location) {
 
         nextDir();
     }
-
     /* ===================================================
        CREATE & RENAME FOLDER
     =================================================== */
@@ -704,7 +768,6 @@ api.controller = function ($scope, $http, $timeout, $location) {
         c.shareRecipientType  = 'user';
         c.selectedUsers       = [];
         c.selectedGroups      = [];
-        c.sharePermission     = 'Viewer';
         c.shareExpirationDate = null;      // FIX: datetime-local needs null/Date, not ''
         c.userSearchText      = '';
         c.userSearchError     = '';
@@ -818,7 +881,6 @@ api.controller = function ($scope, $http, $timeout, $location) {
             recipient_type:  c.shareRecipientType,
             user_ids:        c.selectedUsers.map(function (u) { return u.sys_id; }).join(','),
             group_ids:       c.selectedGroups.map(function (g) { return g.sys_id; }).join(','),
-            permission:      c.sharePermission,
             expiration_date: expiry
         }).then(function (result) {
             if (result.error) return;
@@ -954,7 +1016,6 @@ api.controller = function ($scope, $http, $timeout, $location) {
         }
         next();
     }
-
     /* ===================================================
        CRUD ACTIONS (server reloads all data on success)
     =================================================== */
@@ -962,7 +1023,7 @@ api.controller = function ($scope, $http, $timeout, $location) {
     c.deleteFile            = function (file)   { return c.runAction('delete_file',             { sys_id: file.sys_id }); };
     c.deleteFolder          = function (folder) { return c.runAction('delete_folder',           { sys_id: folder.sys_id }); };
     c.restoreFile           = function (file)   { return c.runAction('restore_file',            { sys_id: file.sys_id }); };
-    c.restoreFolder         = function (folder) { return c.runAction('restore_folder',          { sys_id: folder.sys_id }); };
+    c.restoreFolder         = function (folder) { return c.runAction('restore_folder',           { sys_id: folder.sys_id }); };
     c.deleteFilePermanent   = function (file)   { return c.runAction('delete_file_permanent',   { sys_id: file.sys_id }); };
     c.deleteFolderPermanent = function (folder) { return c.runAction('delete_folder_permanent', { sys_id: folder.sys_id }); };
     c.emptyBin              = function ()       { return c.runAction('empty_bin'); };
@@ -2531,7 +2592,91 @@ api.link = function ($scope, element) {
     .fm-header-search { width: 100%; max-width: 100%; }
     .fm-stats { grid-template-columns: 1fr; }
     .fm-grid { grid-template-columns: 1fr; }
-}</css>
+}
+
+/* =========================================
+   PAGINATION, SHARED TABS AND STATUS
+========================================= */
+.fm-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 14px;
+    margin-top: 10px;
+    border: 1px solid #e8edf2;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #7b8796;
+    font-size: 11px;
+}
+.fm-pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.fm-pagination-controls button,
+.fm-pagination-controls select {
+    min-height: 30px;
+    padding: 4px 9px;
+    border: 1px solid #dfe5ed;
+    border-radius: 5px;
+    background: #ffffff;
+    color: #536174;
+    font-size: 11px;
+}
+.fm-pagination-controls button { cursor: pointer; }
+.fm-pagination-controls button:hover:not(:disabled) {
+    border-color: #b8cff4;
+    color: #3478df;
+    background: #f5f8fc;
+}
+.fm-pagination-controls button:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+.fm-tabs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e7ebf1;
+}
+.fm-tabs button {
+    border: 1px solid transparent;
+    border-radius: 6px;
+    padding: 8px 14px;
+    background: transparent;
+    color: #657386;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+.fm-tabs button:hover { background: #f0f5ff; color: #3478df; }
+.fm-tabs button.active {
+    border-color: #cfe0ff;
+    background: #eaf1ff;
+    color: #3478df;
+}
+.fm-status {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+}
+.fm-status.active { background: #e8f8ef; color: #268a57; }
+.fm-status.inactive { background: #fff0f0; color: #c24c4c; }
+.fm-sidebar-upload { display: none; }
+
+@media (max-width: 650px) {
+    .fm-pagination { align-items: flex-start; }
+    .fm-pagination-controls { width: 100%; justify-content: space-between; }
+    .fm-tabs { width: 100%; }
+    .fm-tabs button { flex: 1; }
+}
+</css>
         <data_table>sp_instance</data_table>
         <demo_data/>
         <description/>
@@ -2567,6 +2712,7 @@ api.link = function ($scope, element) {
     data.folders        = [];
     data.sharedFiles    = [];
     data.sharedFolders  = [];
+    data.sharedByMe     = [];
     data.recycleFiles   = [];
     data.recycleFolders = [];
     data.users          = [];
@@ -2606,15 +2752,15 @@ api.link = function ($scope, element) {
             case 'rename_folder':           renameFolder();          break;
             case 'create_file':             createFile();            break;
             case 'discard_file':            discardFile();           break;
-            case 'update_file':             updateFile();            break;
-            case 'delete_file':             deleteFile();            break;
-            case 'delete_folder':           deleteFolder();          break;
-            case 'restore_file':            restoreFile();           break;
-            case 'restore_folder':          restoreFolder();         break;
-            case 'delete_file_permanent':   deleteFilePermanent();   break;
-            case 'delete_folder_permanent': deleteFolderPermanent(); break;
-            case 'share':                   shareItem();             break;
-            case 'empty_bin':               emptyBin();              break;
+            case 'update_file':             updateFile();             break;
+            case 'delete_file':             deleteFile();             break;
+            case 'delete_folder':            deleteFolder();           break;
+            case 'restore_file':             restoreFile();            break;
+            case 'restore_folder':            restoreFolder();          break;
+            case 'delete_file_permanent':    deleteFilePermanent();    break;
+            case 'delete_folder_permanent':  deleteFolderPermanent();  break;
+            case 'share':                    shareItem();              break;
+            case 'empty_bin':                emptyBin();               break;
             default:
                 data.error = 'Invalid action: ' + (input.action || '');
         }
@@ -2785,7 +2931,8 @@ api.link = function ($scope, element) {
             permission:     permission,
             can_edit:       canEdit(permission),
             share_root:     !!isShareRoot,
-            sys_created_on: file.getValue('sys_created_on') || ''
+            sys_created_on: file.getValue('sys_created_on') || '',
+            created_date:   file.getDisplayValue('sys_created_on') || ''
         };
         target.push(obj);
         return obj;
@@ -2803,6 +2950,8 @@ api.link = function ($scope, element) {
             parent_folder: folder.getValue('parent_folder') || '',
             description:   folder.getValue('description') || '',
             owner:         folder.getValue('owner') || '',
+            sys_created_on: folder.getValue('sys_created_on') || '',
+            created_date:  folder.getDisplayValue('sys_created_on') || '',
             permission:    permission,
             can_edit:      canEdit(permission),
             share_root:    !!isShareRoot
@@ -2890,8 +3039,7 @@ api.link = function ($scope, element) {
         data.users = [];
         var term = (input.search_term || '').trim();
         if (term.length < 2) return;
-
-        var users = new GlideRecord('sys_user');
+                var users = new GlideRecord('sys_user');
         users.addQuery('active', true);
         users.addQuery('sys_id', '!=', userId);
 
@@ -3239,7 +3387,6 @@ api.link = function ($scope, element) {
 
         data.success = 'Recycle Bin emptied.';
     }
-
     /* ==================================================
        SHARE FILE OR FOLDER
     ================================================== */
@@ -3250,11 +3397,10 @@ api.link = function ($scope, element) {
         var shareRecipient = (input.recipient_type || 'user');
         var targetUsers    = (input.user_ids || '');
         var targetGroups   = (input.group_ids || '');
-        var permission     = (input.permission || '');
+        var permission     = 'Viewer'; // fixed least-privilege default; permission is not user-selectable
         var expirationDate = (input.expiration_date || '');
 
         if (!itemId) { data.error = 'No item specified to share.'; return; }
-        if (permission !== 'Viewer' && permission !== 'Editor') { data.error = 'Invalid permission level.'; return; }
 
         var targetField;
         if (type === 'file') {
@@ -3316,7 +3462,7 @@ api.link = function ($scope, element) {
             if (!share.insert()) { data.error = 'Unable to share this item. Please try again.'; return; }
         }
 
-        data.success = 'Item shared successfully as ' + permission + '.';
+        data.success = 'Item shared successfully.';
     }
 
     /* ==================================================
@@ -3327,6 +3473,7 @@ api.link = function ($scope, element) {
         loadOwnedFolders();
         loadOwnedFiles();
         loadSharedItems();
+        loadSharedByMe();
         loadRecycleBin();
         loadStorage();
         data.loaded = true;
@@ -3381,7 +3528,10 @@ api.link = function ($scope, element) {
                     var file = getRecord(FILE_TABLE, fileId);
                     if (file && !isDeleted(file) && !canOwnFile(file)) {
                         var fo = addFileToList(file, data.sharedFiles, true);
-                        if (fo) seenFiles[fileId] = fo;
+                        if (fo) {
+                            fo.shared_date = shares.getDisplayValue('sys_created_on') || '';
+                            seenFiles[fileId] = fo;
+                        }
                     }
                 }
             }
@@ -3390,8 +3540,54 @@ api.link = function ($scope, element) {
                 var shFolder = getRecord(FOLDER_TABLE, folderId);
                 if (shFolder && !isDeleted(shFolder) && !canOwnFolder(shFolder)) {
                     _addSharedFolderTree(folderId, true, seenFolders, seenFiles, 0);
+                    if (seenFolders[folderId]) seenFolders[folderId].shared_date = shares.getDisplayValue('sys_created_on') || '';
                 }
             }
+        }
+    }
+
+    /**
+     * Items shared by the current user. This is a separate view from
+     * Shared with Me and includes the recipient and share creation date.
+     */
+    function loadSharedByMe() {
+        var shares = new GlideRecord(SHARE_TABLE);
+        shares.addQuery('shared_by', userId);
+        shares.orderByDesc('sys_created_on');
+        shares.query();
+
+        while (shares.next()) {
+            var fileId = shares.getValue('file');
+            var folderId = shares.getValue('folder');
+            var itemType = fileId ? 'File' : 'Folder';
+            var item = fileId ? getRecord(FILE_TABLE, fileId) : getRecord(FOLDER_TABLE, folderId);
+            if (!item) continue;
+
+            var recipients = [];
+            var userIds = (shares.getValue('shared_with_user') || '').split(',');
+            var groupIds = (shares.getValue('shared_with_group') || '').split(',');
+            for (var i = 0; i < userIds.length; i++) {
+                if (!userIds[i]) continue;
+                var u = getRecord('sys_user', userIds[i]);
+                recipients.push(u ? (u.getValue('name') || u.getValue('user_name')) : userIds[i]);
+            }
+            for (var j = 0; j < groupIds.length; j++) {
+                if (!groupIds[j]) continue;
+                var g = getRecord('sys_user_group', groupIds[j]);
+                recipients.push((g ? (g.getValue('name') || '') : groupIds[j]) + ' (Group)');
+            }
+
+            data.sharedByMe.push({
+                sys_id: shares.getUniqueValue(),
+                item_sys_id: fileId || folderId || '',
+                item_name: fileId ? (item.getValue('filename') || item.getDisplayValue()) : (item.getValue('folder_name') || item.getDisplayValue()),
+                item_type: itemType,
+                item_created_date: item.getDisplayValue('sys_created_on') || '',
+                shared_with: recipients.join(', '),
+                shared_date: shares.getDisplayValue('sys_created_on') || '',
+                expiration_date: shares.getDisplayValue('expiration_date') || '',
+                active: isActiveShare(shares)
+            });
         }
     }
 
@@ -3445,6 +3641,7 @@ api.link = function ($scope, element) {
             data.recycleFiles.push({
                 sys_id:         files.getUniqueValue(),
                 filename:       files.getValue('filename') || '',
+                created_date:   files.getDisplayValue('sys_created_on') || '',
                 file_size:      parseInt(files.getValue('file_size'), 10) || 0,
                 file_extension: files.getValue('file_extension') || '',
                 deleted_date:   files.getDisplayValue('deleted_date') || ''
@@ -3461,6 +3658,7 @@ api.link = function ($scope, element) {
             data.recycleFolders.push({
                 sys_id:       folders.getUniqueValue(),
                 folder_name:  folders.getValue('folder_name') || '',
+                created_date: folders.getDisplayValue('sys_created_on') || '',
                 deleted_date: folders.getDisplayValue('deleted_date') || ''
             });
         }
@@ -3535,14 +3733,14 @@ api.link = function ($scope, element) {
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-04 11:15:08</sys_created_on>
         <sys_id>53595bdec35c5710c05a33bc0501312a</sys_id>
-        <sys_mod_count>79</sys_mod_count>
+        <sys_mod_count>89</sys_mod_count>
         <sys_name>File home</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sp_widget_53595bdec35c5710c05a33bc0501312a</sys_update_name>
-        <sys_updated_by>Siva</sys_updated_by>
-        <sys_updated_on>2026-11-13 12:35:12</sys_updated_on>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-13 14:14:28</sys_updated_on>
         <template><![CDATA[<div class="fm-app" ng-class="{'fm-picker': c.pickerMode}" ng-keydown="c.onKeyDown($event)" ng-click="c.closeContextMenu()">
 
   <!-- =========================================
@@ -3554,26 +3752,8 @@ api.link = function ($scope, element) {
       <span>My Files</span>
     </div>
 
-    <div class="fm-new-wrapper fm-sidebar-new">
-      <button type="button" class="fm-button fm-primary fm-new-btn" ng-click="c.showNewMenu = !c.showNewMenu; $event.stopPropagation()">
-        <i class="fa fa-plus"></i><span>New</span><i class="fa fa-angle-down"></i>
-      </button>
+    <div class="fm-sidebar-upload">
       <input type="file" id="fmFolderUpload" webkitdirectory directory multiple style="display:none" onchange="angular.element(this).scope().c.onFolderUploadSelected(this)">
-
-      <div class="fm-new-dropdown fm-sidebar-dropdown" ng-if="c.showNewMenu" ng-click="$event.stopPropagation()">
-        <div class="fm-new-option" ng-click="c.showNewMenu = false; c.openFolderModal()">
-          <i class="fa fa-folder"></i>
-          <span><strong>New Folder</strong><small>Create a new folder</small></span>
-        </div>
-        <div class="fm-new-option" ng-click="c.showNewMenu = false; c.triggerFolderUpload()">
-          <i class="fa fa-folder-open"></i>
-          <span><strong>Upload Folder</strong><small>Select a folder from your computer</small></span>
-        </div>
-        <div class="fm-new-option" ng-click="c.showNewMenu = false; c.openUploadFolderPicker()">
-          <i class="fa fa-file"></i>
-          <span><strong>New File</strong><small>Select destination and upload files</small></span>
-        </div>
-      </div>
     </div>
 
     <div class="fm-menu">
@@ -3590,7 +3770,7 @@ api.link = function ($scope, element) {
         <span class="fm-count-pill" ng-if="c.rootFolders().length">{{c.rootFolders().length}}</span>
       </a>
       <a ng-class="{'active': c.view == 'shared'}" ng-click="c.setView('shared')">
-        <i class="fa fa-users"></i><span>Shared with Me</span>
+        <i class="fa fa-users"></i><span>Shared</span>
         <span class="fm-count-pill" ng-if="c.sharedCount()">{{c.sharedCount()}}</span>
       </a>
 
@@ -3625,7 +3805,7 @@ api.link = function ($scope, element) {
         <h2 ng-if="c.view == 'allfiles'">All Files</h2>
         <h2 ng-if="c.view == 'folders'">My Folders</h2>
         <h2 ng-if="c.view == 'files'">{{c.currentFolderName}}</h2>
-        <h2 ng-if="c.view == 'shared'">Shared with Me</h2>
+        <h2 ng-if="c.view == 'shared'">Shared</h2>
         <h2 ng-if="c.view == 'recycle'">Recycle Bin</h2>
         <h2 ng-if="c.view == 'storage'">Storage</h2>
         <p>Manage your files and folders in one place.</p>
@@ -3684,7 +3864,7 @@ api.link = function ($scope, element) {
         </div>
         <div class="fm-stat-card fm-clickable" ng-click="c.setHomeSubView('shared')">
           <div class="fm-stat-icon green"><i class="fa fa-share-alt"></i></div>
-          <div><span>Shared with Me</span><strong>{{c.sharedCount() || 0}}</strong></div>
+          <div><span>Shared</span><strong>{{c.sharedCount() || 0}}</strong></div>
         </div>
         <div class="fm-stat-card fm-clickable" ng-click="c.setHomeSubView('recycle')">
           <div class="fm-stat-icon orange"><i class="fa fa-trash"></i></div>
@@ -3721,12 +3901,12 @@ api.link = function ($scope, element) {
               <th ng-click="c.toggleSort('filename')" class="fm-sortable">File Name <i class="fa" ng-class="c.getSortIcon('filename')"></i></th>
               <th>Folder</th>
               <th ng-click="c.toggleSort('file_size')" class="fm-sortable">Size <i class="fa" ng-class="c.getSortIcon('file_size')"></i></th>
-              <th>Permission</th>
+              <th>Created Date</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr ng-repeat="file in c.allFilesFiltered() | orderBy:c.fileSort" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
+            <tr ng-repeat="file in c.pageItems(c.allFilesFiltered() | orderBy:c.fileSort, 'allFiles')" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
               <td><input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()" ng-dblclick="$event.stopPropagation()"></td>
               <td>
                 <div class="fm-file-name">
@@ -3741,8 +3921,7 @@ api.link = function ($scope, element) {
                 <span ng-if="!c.getFolderName(file.folder, file)" style="color:#aaa">—</span>
               </td>
               <td>{{c.formatBytes(file.file_size)}}</td>
-              <td><span class="fm-permission fm-perm-{{file.permission | lowercase}}">{{file.permission}}</span></td>
-              <td>
+<td>{{file.created_date || '—'}}</td>              <td>
                 <div class="fm-actions">
                   <button type="button" class="fm-more-btn" title="More actions" ng-click="c.openMenuFromButton($event, file, 'file')">
                     <i class="fa fa-ellipsis-v"></i>
@@ -3752,6 +3931,15 @@ api.link = function ($scope, element) {
             </tr>
           </tbody>
         </table>
+      </div>
+      <div class="fm-pagination" ng-if="c.allFilesFiltered().length">
+        <span>Showing {{c.pageInfo(c.allFilesFiltered(), 'allFiles').start}}–{{c.pageInfo(c.allFilesFiltered(), 'allFiles').end}} of {{c.pageInfo(c.allFilesFiltered(), 'allFiles').total}}</span>
+        <div class="fm-pagination-controls">
+          <select ng-model="c.pageSize" ng-options="n for n in [10, 20, 50]" aria-label="Rows per page"></select>
+          <button type="button" ng-click="c.previousPage(c.allFilesFiltered(), 'allFiles')" ng-disabled="c.pageInfo(c.allFilesFiltered(), 'allFiles').page <= 1">Previous</button>
+          <span>Page {{c.pageInfo(c.allFilesFiltered(), 'allFiles').page}} of {{c.pageInfo(c.allFilesFiltered(), 'allFiles').pages}}</span>
+          <button type="button" ng-click="c.nextPage(c.allFilesFiltered(), 'allFiles')" ng-disabled="c.pageInfo(c.allFilesFiltered(), 'allFiles').page >= c.pageInfo(c.allFilesFiltered(), 'allFiles').pages">Next</button>
+        </div>
       </div>
       <div class="fm-selection-bar" ng-if="c.selectedCount() > 0">
         <span class="fm-selection-count">{{c.selectedCount()}} selected</span>
@@ -3777,16 +3965,17 @@ api.link = function ($scope, element) {
         </div>
         <div class="fm-toolbar-actions">
           <button type="button" class="fm-button" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
+          <button type="button" class="fm-button" ng-click="c.triggerFolderUpload()"><i class="fa fa-folder-open"></i> Upload Folder</button>
           <button type="button" class="fm-button fm-primary" ng-click="c.openFolderModal()"><i class="fa fa-plus"></i> New Folder</button>
         </div>
       </div>
       <div class="fm-grid" ng-if="c.rootFolders().length">
-        <div class="fm-folder-card" ng-repeat="folder in c.rootFolders() | filter:c.searchFolders" fm-context-type="folder" fm-context-item>
+        <div class="fm-folder-card" ng-repeat="folder in c.pageItems(c.rootFolders() | filter:c.searchFolders, 'rootFolders')" fm-context-type="folder" fm-context-item>
           <div class="fm-folder-main" ng-click="c.openFolder(folder, true)">
             <div class="fm-folder-icon"><i class="fa fa-folder"></i></div>
             <div class="fm-card-info">
               <strong>{{folder.folder_name}}</strong>
-              <span>{{folder.permission}}</span>
+              <span>Created {{folder.created_date || '—'}}</span>
             </div>
           </div>
           <div class="fm-card-menu">
@@ -3794,6 +3983,15 @@ api.link = function ($scope, element) {
               <i class="fa fa-ellipsis-v"></i>
             </button>
           </div>
+        </div>
+      </div>
+      <div class="fm-pagination" ng-if="c.rootFolders().length">
+        <span>Showing {{c.pageInfo(c.rootFolders() | filter:c.searchFolders, 'rootFolders').start}}–{{c.pageInfo(c.rootFolders() | filter:c.searchFolders, 'rootFolders').end}} of {{c.pageInfo(c.rootFolders() | filter:c.searchFolders, 'rootFolders').total}} folders</span>
+        <div class="fm-pagination-controls">
+          <select ng-model="c.pageSize" ng-options="n for n in [10, 20, 50]" aria-label="Rows per page"></select>
+          <button type="button" ng-click="c.previousPage(c.rootFolders(), 'rootFolders')" ng-disabled="c.pageInfo(c.rootFolders() | filter:c.searchFolders, 'rootFolders').page <= 1">Previous</button>
+          <span>Page {{c.pageInfo(c.rootFolders() | filter:c.searchFolders, 'rootFolders').page}} of {{c.pageInfo(c.rootFolders() | filter:c.searchFolders, 'rootFolders').pages}}</span>
+          <button type="button" ng-click="c.nextPage(c.rootFolders(), 'rootFolders')" ng-disabled="c.pageInfo(c.rootFolders() | filter:c.searchFolders, 'rootFolders').page >= c.pageInfo(c.rootFolders() | filter:c.searchFolders, 'rootFolders').pages">Next</button>
         </div>
       </div>
       <div class="fm-empty" ng-if="!c.rootFolders().length">
@@ -3814,6 +4012,7 @@ api.link = function ($scope, element) {
         </div>
         <div class="fm-toolbar-actions" ng-if="c.currentFolderCanEdit()">
           <button type="button" class="fm-button" ng-click="c.openFolderModal()"><i class="fa fa-plus"></i> New Subfolder</button>
+          <button type="button" class="fm-button" ng-click="c.triggerFolderUpload()"><i class="fa fa-folder-open"></i> Upload Folder</button>
           <label class="fm-button fm-primary" ng-class="{'fm-disabled': c.uploading}">
             <i class="fa fa-upload"></i> {{c.uploading ? 'Uploading...' : 'Upload Files'}}
             <input type="file" multiple style="position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none;" ng-disabled="c.uploading" onchange="angular.element(this).scope().c.onDirectFilesSelected(this)">
@@ -3830,12 +4029,12 @@ api.link = function ($scope, element) {
       <div class="fm-subsection" ng-if="c.foldersInCurrentFolder().length">
         <h4>Subfolders</h4>
         <div class="fm-grid">
-          <div class="fm-folder-card" ng-repeat="folder in c.foldersInCurrentFolder() | filter:c.searchFolders" fm-context-type="folder" fm-context-item>
+          <div class="fm-folder-card" ng-repeat="folder in c.pageItems(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders')" fm-context-type="folder" fm-context-item>
             <div class="fm-folder-main" ng-click="c.openFolder(folder)">
               <div class="fm-folder-icon"><i class="fa fa-folder"></i></div>
               <div class="fm-card-info">
                 <strong>{{folder.folder_name}}</strong>
-                <span>{{folder.permission}}</span>
+                <span>Created {{folder.created_date || '—'}}</span>
               </div>
             </div>
             <div class="fm-card-menu">
@@ -3843,6 +4042,14 @@ api.link = function ($scope, element) {
                 <i class="fa fa-ellipsis-v"></i>
               </button>
             </div>
+          </div>
+        </div>
+        <div class="fm-pagination" ng-if="c.foldersInCurrentFolder().length">
+          <span>Showing {{c.pageInfo(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders').start}}–{{c.pageInfo(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders').end}} of {{c.pageInfo(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders').total}} folders</span>
+          <div class="fm-pagination-controls">
+            <button type="button" ng-click="c.previousPage(c.foldersInCurrentFolder(), 'childFolders')" ng-disabled="c.pageInfo(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders').page <= 1">Previous</button>
+            <span>Page {{c.pageInfo(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders').page}} of {{c.pageInfo(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders').pages}}</span>
+            <button type="button" ng-click="c.nextPage(c.foldersInCurrentFolder(), 'childFolders')" ng-disabled="c.pageInfo(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders').page >= c.pageInfo(c.foldersInCurrentFolder() | filter:c.searchFolders, 'childFolders').pages">Next</button>
           </div>
         </div>
       </div>
@@ -3856,12 +4063,12 @@ api.link = function ($scope, element) {
                 <th style="width:34px;"><input type="checkbox" ng-model="c.allSelected" ng-change="c.toggleSelectAll()"></th>
                 <th ng-click="c.toggleSort('filename')" class="fm-sortable">File Name <i class="fa" ng-class="c.getSortIcon('filename')"></i></th>
                 <th ng-click="c.toggleSort('file_size')" class="fm-sortable">Size <i class="fa" ng-class="c.getSortIcon('file_size')"></i></th>
-                <th>Permission</th>
+                <th>Created Date</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
-              <tr ng-repeat="file in c.filesInCurrentFolder() | filter:c.searchFiles | orderBy:c.fileSort" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
+              <tr ng-repeat="file in c.pageItems(c.filesInCurrentFolder() | filter:c.searchFiles | orderBy:c.fileSort, 'folderFiles')" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
                 <td><input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()" ng-dblclick="$event.stopPropagation()"></td>
                 <td>
                   <div class="fm-file-name">
@@ -3870,7 +4077,7 @@ api.link = function ($scope, element) {
                   </div>
                 </td>
                 <td>{{c.formatBytes(file.file_size)}}</td>
-                <td><span class="fm-permission fm-perm-{{file.permission | lowercase}}">{{file.permission}}</span></td>
+                <td>{{file.created_date || '—'}}</td>
                 <td>
                   <div class="fm-actions">
                     <button type="button" class="fm-more-btn" title="More actions" ng-click="c.openMenuFromButton($event, file, 'file')">
@@ -3881,6 +4088,14 @@ api.link = function ($scope, element) {
               </tr>
             </tbody>
           </table>
+        </div>
+        <div class="fm-pagination" ng-if="c.filesInCurrentFolder().length">
+          <span>Showing {{c.pageInfo(c.filesInCurrentFolder() | filter:c.searchFiles, 'folderFiles').start}}–{{c.pageInfo(c.filesInCurrentFolder() | filter:c.searchFiles, 'folderFiles').end}} of {{c.pageInfo(c.filesInCurrentFolder() | filter:c.searchFiles, 'folderFiles').total}} files</span>
+          <div class="fm-pagination-controls">
+            <button type="button" ng-click="c.previousPage(c.filesInCurrentFolder(), 'folderFiles')" ng-disabled="c.pageInfo(c.filesInCurrentFolder() | filter:c.searchFiles, 'folderFiles').page <= 1">Previous</button>
+            <span>Page {{c.pageInfo(c.filesInCurrentFolder() | filter:c.searchFiles, 'folderFiles').page}} of {{c.pageInfo(c.filesInCurrentFolder() | filter:c.searchFiles, 'folderFiles').pages}}</span>
+            <button type="button" ng-click="c.nextPage(c.filesInCurrentFolder(), 'folderFiles')" ng-disabled="c.pageInfo(c.filesInCurrentFolder() | filter:c.searchFiles, 'folderFiles').page >= c.pageInfo(c.filesInCurrentFolder() | filter:c.searchFiles, 'folderFiles').pages">Next</button>
+          </div>
         </div>
         <div class="fm-selection-bar" ng-if="c.selectedCount() > 0">
           <span class="fm-selection-count">{{c.selectedCount()}} selected</span>
@@ -3896,77 +4111,101 @@ api.link = function ($scope, element) {
     </section>
 
     <!-- =========================================
-         SHARED WITH ME
+         SHARED
     ========================================= -->
     <section ng-if="c.view == 'shared' || (c.view == 'home' && c.homeSubView == 'shared')" class="fm-content">
       <div class="fm-toolbar">
         <div>
-          <h3>Shared with Me</h3>
-          <p>Files and folders shared with you by other users.</p>
+          <h3>Shared</h3>
+          <p>Manage items shared with you and items you have shared with others.</p>
         </div>
       </div>
-      <div class="fm-subsection">
-        <h4>Shared Folders</h4>
-        <div class="fm-grid" ng-if="c.sharedRootFolders().length">
-          <div class="fm-folder-card" ng-repeat="folder in c.sharedRootFolders() | filter:c.searchFolders" fm-context-type="folder" fm-context-item>
-            <div class="fm-folder-main" ng-click="c.openFolder(folder, true)">
-              <div class="fm-folder-icon"><i class="fa fa-folder"></i></div>
-              <div class="fm-card-info">
-                <strong>{{folder.folder_name}}</strong>
-                <span>{{folder.permission}}</span>
+      <div class="fm-tabs">
+        <button type="button" ng-class="{'active': c.sharedView == 'withMe'}" ng-click="c.setSharedView('withMe')">Shared with Me</button>
+        <button type="button" ng-class="{'active': c.sharedView == 'byMe'}" ng-click="c.setSharedView('byMe')">Shared by Me</button>
+      </div>
+
+      <div ng-if="c.sharedView == 'withMe'">
+        <div class="fm-subsection">
+          <h4>Shared Folders</h4>
+          <div class="fm-grid" ng-if="c.sharedRootFolders().length">
+            <div class="fm-folder-card" ng-repeat="folder in c.pageItems(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders')" fm-context-type="folder" fm-context-item>
+              <div class="fm-folder-main" ng-click="c.openFolder(folder, true)">
+                <div class="fm-folder-icon"><i class="fa fa-folder"></i></div>
+                <div class="fm-card-info">
+                  <strong>{{folder.folder_name}}</strong>
+                  <span>Created {{folder.created_date || '—'}}</span>
+                  <span>Shared {{folder.shared_date || '—'}}</span>
+                </div>
               </div>
+              <i class="fa fa-angle-right fm-card-arrow"></i>
             </div>
-            <i class="fa fa-angle-right fm-card-arrow"></i>
           </div>
+          <div class="fm-pagination" ng-if="c.sharedRootFolders().length">
+            <span>Showing {{c.pageInfo(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders').start}}–{{c.pageInfo(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders').end}} of {{c.pageInfo(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders').total}} folders</span>
+            <div class="fm-pagination-controls">
+              <button type="button" ng-click="c.previousPage(c.sharedRootFolders(), 'sharedFolders')" ng-disabled="c.pageInfo(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders').page <= 1">Previous</button>
+              <span>Page {{c.pageInfo(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders').page}} of {{c.pageInfo(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders').pages}}</span>
+              <button type="button" ng-click="c.nextPage(c.sharedRootFolders(), 'sharedFolders')" ng-disabled="c.pageInfo(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders').page >= c.pageInfo(c.sharedRootFolders() | filter:c.searchFolders, 'sharedFolders').pages">Next</button>
+            </div>
+          </div>
+          <div class="fm-empty" ng-if="!c.sharedRootFolders().length"><p>No shared folders available.</p></div>
         </div>
-        <div class="fm-empty" ng-if="!c.sharedRootFolders().length">
-          <p>No shared folders available.</p>
+
+        <div class="fm-subsection">
+          <h4>Shared Files</h4>
+          <div class="fm-table-wrap" ng-if="c.sharedRootFiles().length">
+            <table class="fm-table">
+              <thead><tr><th>File Name</th><th>Size</th><th>Created Date</th><th>Shared Date</th><th>Actions</th></tr></thead>
+              <tbody>
+                <tr ng-repeat="file in c.pageItems(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles')" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
+                  <td><div class="fm-file-name"><i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i><span title="{{file.filename}}">{{file.filename}}</span></div></td>
+                  <td>{{c.formatBytes(file.file_size)}}</td>
+                  <td>{{file.created_date || '—'}}</td>
+                  <td>{{file.shared_date || '—'}}</td>
+                  <td><div class="fm-actions"><button type="button" class="fm-more-btn" title="More actions" ng-click="c.openMenuFromButton($event, file, 'file')"><i class="fa fa-ellipsis-v"></i></button></div></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="fm-pagination" ng-if="c.sharedRootFiles().length">
+            <span>Showing {{c.pageInfo(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles').start}}–{{c.pageInfo(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles').end}} of {{c.pageInfo(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles').total}} files</span>
+            <div class="fm-pagination-controls">
+              <button type="button" ng-click="c.previousPage(c.sharedRootFiles(), 'sharedFiles')" ng-disabled="c.pageInfo(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles').page <= 1">Previous</button>
+              <span>Page {{c.pageInfo(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles').page}} of {{c.pageInfo(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles').pages}}</span>
+              <button type="button" ng-click="c.nextPage(c.sharedRootFiles(), 'sharedFiles')" ng-disabled="c.pageInfo(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles').page >= c.pageInfo(c.sharedRootFiles() | filter:c.searchFiles, 'sharedFiles').pages">Next</button>
+            </div>
+          </div>
+          <div class="fm-empty" ng-if="!c.sharedRootFiles().length"><p>No shared files available.</p></div>
         </div>
       </div>
-      <div class="fm-subsection">
-        <h4>Shared Files</h4>
-        <div class="fm-table-wrap" ng-if="c.sharedRootFiles().length">
+
+      <div ng-if="c.sharedView == 'byMe'">
+        <div class="fm-table-wrap" ng-if="c.data.sharedByMe.length">
           <table class="fm-table">
-            <thead>
-              <tr>
-                <th style="width:34px;"></th>
-                <th>File Name</th>
-                <th>Size</th>
-                <th>Permission</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Item</th><th>Type</th><th>Created Date</th><th>Shared With</th><th>Shared Date</th><th>Expiration Date</th><th>Status</th></tr></thead>
             <tbody>
-              <tr ng-repeat="file in c.sharedRootFiles() | filter:c.searchFiles" ng-dblclick="c.onRowDblClick(file)" fm-context-type="file" fm-context-item>
-                <td><input type="checkbox" ng-model="file._selected" ng-change="c.onFileSelect()" ng-dblclick="$event.stopPropagation()"></td>
-                <td>
-                  <div class="fm-file-name">
-                    <i class="{{c.getFileIcon(file)}} fm-file-icon" ng-class="c.getFileIconColor(file)"></i>
-                    <span title="{{file.filename}}">{{file.filename}}</span>
-                  </div>
-                </td>
-                <td>{{c.formatBytes(file.file_size)}}</td>
-                <td><span class="fm-permission fm-perm-{{file.permission | lowercase}}">{{file.permission}}</span></td>
-                <td>
-                  <div class="fm-actions">
-                    <button type="button" class="fm-more-btn" title="More actions" ng-click="c.openMenuFromButton($event, file, 'file')">
-                      <i class="fa fa-ellipsis-v"></i>
-                    </button>
-                  </div>
-                </td>
+              <tr ng-repeat="share in c.pageItems(c.data.sharedByMe | filter:c.searchText, 'sharedByMe')">
+                <td>{{share.item_name}}</td>
+                <td>{{share.item_type}}</td>
+                <td>{{share.item_created_date || '—'}}</td>
+                <td>{{share.shared_with || '—'}}</td>
+                <td>{{share.shared_date || '—'}}</td>
+                <td>{{share.expiration_date || 'Never'}}</td>
+                <td><span class="fm-status" ng-class="share.active ? 'active' : 'inactive'">{{share.active ? 'Active' : 'Inactive'}}</span></td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div class="fm-selection-bar" ng-if="c.selectedCount() > 0">
-          <span class="fm-selection-count">{{c.selectedCount()}} selected</span>
-          <button type="button" class="fm-button fm-primary" ng-if="c.pickerMode" ng-disabled="c.pickBusy" ng-click="c.attachSelected()"><i class="fa fa-paperclip"></i> {{c.pickBusy ? 'Attaching...' : 'Attach selected'}}</button>
-          <button type="button" class="fm-button" ng-if="!c.pickerMode" ng-click="c.downloadSelected()"><i class="fa fa-download"></i> Download</button>
-          <button type="button" class="fm-button" ng-click="c.clearSelection()">Clear</button>
+        <div class="fm-pagination" ng-if="c.data.sharedByMe.length">
+          <span>Showing {{c.pageInfo(c.data.sharedByMe | filter:c.searchText, 'sharedByMe').start}}–{{c.pageInfo(c.data.sharedByMe | filter:c.searchText, 'sharedByMe').end}} of {{c.pageInfo(c.data.sharedByMe | filter:c.searchText, 'sharedByMe').total}} shares</span>
+          <div class="fm-pagination-controls">
+            <button type="button" ng-click="c.previousPage(c.data.sharedByMe, 'sharedByMe')" ng-disabled="c.pageInfo(c.data.sharedByMe | filter:c.searchText, 'sharedByMe').page <= 1">Previous</button>
+            <span>Page {{c.pageInfo(c.data.sharedByMe | filter:c.searchText, 'sharedByMe').page}} of {{c.pageInfo(c.data.sharedByMe | filter:c.searchText, 'sharedByMe').pages}}</span>
+            <button type="button" ng-click="c.nextPage(c.data.sharedByMe, 'sharedByMe')" ng-disabled="c.pageInfo(c.data.sharedByMe | filter:c.searchText, 'sharedByMe').page >= c.pageInfo(c.data.sharedByMe | filter:c.searchText, 'sharedByMe').pages">Next</button>
+          </div>
         </div>
-        <div class="fm-empty" ng-if="!c.sharedRootFiles().length">
-          <p>No shared files available.</p>
-        </div>
+        <div class="fm-empty" ng-if="!c.data.sharedByMe.length"><p>You have not shared any items yet.</p></div>
       </div>
     </section>
 
@@ -3993,6 +4232,7 @@ api.link = function ($scope, element) {
             <thead>
               <tr>
                 <th>Folder Name</th>
+                <th>Created Date</th>
                 <th>Deleted On</th>
                 <th style="width: 250px; text-align: right;">Actions</th>
               </tr>
@@ -4005,6 +4245,7 @@ api.link = function ($scope, element) {
                     <span>{{folder.folder_name}}</span>
                   </div>
                 </td>
+                <td>{{folder.created_date || '—'}}</td>
                 <td>{{folder.deleted_date || '—'}}</td>
                 <td>
                   <div class="fm-recycle-actions">
@@ -4025,6 +4266,7 @@ api.link = function ($scope, element) {
               <tr>
                 <th>File Name</th>
                 <th>Size</th>
+                <th>Created Date</th>
                 <th>Deleted On</th>
                 <th style="width: 250px; text-align: right;">Actions</th>
               </tr>
@@ -4038,6 +4280,7 @@ api.link = function ($scope, element) {
                   </div>
                 </td>
                 <td>{{c.formatBytes(file.file_size)}}</td>
+                <td>{{file.created_date || '—'}}</td>
                 <td>{{file.deleted_date || '—'}}</td>
                 <td>
                   <div class="fm-recycle-actions">
@@ -4121,7 +4364,7 @@ api.link = function ($scope, element) {
         <div class="fm-folder-picker-item" ng-repeat="folder in c.editableFolders() | orderBy:'folder_name'" ng-class="{'selected': c.targetUploadFolder == folder.sys_id}" ng-click="c.targetUploadFolder = folder.sys_id; c.targetUploadFolderName = folder.folder_name">
           <i class="fa fa-folder"></i>
           <span class="fm-folder-picker-name">{{folder.folder_name}}</span>
-          <span class="fm-folder-picker-perm">{{folder.permission}}</span>
+          
           <i class="fa fa-check fm-folder-picker-check" ng-if="c.targetUploadFolder == folder.sys_id"></i>
         </div>
         <div style="padding:16px; text-align:center; color:#98a4b2; font-size:12px;" ng-if="!c.editableFolders().length">No folders available. Please create a folder first.</div>
@@ -4248,12 +4491,6 @@ api.link = function ($scope, element) {
           </div>
         </div>
       </div>
-
-      <label>Permission</label>
-      <select ng-model="c.sharePermission">
-        <option value="Viewer">Viewer</option>
-        <option value="Editor">Editor</option>
-      </select>
 
       <label>Expiration Date <span class="fm-optional">(Optional)</span></label>
       <input type="datetime-local" class="fm-date-input" ng-model="c.shareExpirationDate">
