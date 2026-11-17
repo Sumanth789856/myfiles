@@ -2465,1367 +2465,1585 @@ tr:hover .fm-file-icon-box, .fm-file-card:hover .fm-file-card-preview { transfor
         <option_schema/>
         <public>false</public>
         <roles/>
-        <script><![CDATA[(function () {
-    /*
-     * File Manager Widget — Server Script (CORRECTED + COMPLETE)
-     *
-     * Tables used:
-     *   x_1830514_fm_file    — File records
-     *   x_1830514_fm_folder  — Folder records
-     *   x_1830514_fm_share   — Share records
-     */
+        <script><![CDATA[/**
+ * File Manager Widget — Client Script (CORRECTED + INTERACTIVE)
+ * AngularJS Controller + Link Function
+ */
 
-    var FILE_TABLE   = 'x_1830514_fm_file';
-    var FOLDER_TABLE = 'x_1830514_fm_folder';
-    var SHARE_TABLE  = 'x_1830514_fm_share';
+api.controller = function ($scope, $http, $timeout, $location, $filter, $templateCache) {
+    var c = this;
 
-    var userId = gs.getUserID();
-    var _myGroupIds = null;   // cache
+    /* ===================================================
+       STATE
+    =================================================== */
+    c.view              = 'home';   // home | allfiles | folders | files | shared | recycle | storage
+    c.homeSubView       = '';
+    c.sharedView        = 'withMe'; // withMe | byMe
+    c.viewMode          = 'list';   // list | grid
+    c.privacyFilter     = 'public'; // private | public
+    c.pageSize          = 10;
+    c.currentPages      = { allFiles: 1, rootFolders: 1, childFolders: 1, folderFiles: 1, sharedFolders: 1, sharedFiles: 1, sharedByMe: 1 };
+    c.currentFolder     = '';
+    c.currentFolderName = '';
+    c.searchText        = '';
+    c.loading           = false;
+    c.breadcrumb        = [];
 
-    /* ---- Initialise response ---- */
-    data.files          = [];
-    data.folders        = [];
-    data.sharedFiles    = [];
-    data.sharedFolders  = [];
-    data.sharedByMe     = [];
-    data.recycleFiles   = [];
-    data.recycleFolders = [];
-	  data.publicFiles   = [];
-    data.publicFolders = [];
-    data.users          = [];
-    data.groups         = [];
-    data.storage        = { fileCount: 0, totalBytes: 0, byType: [] };
-    data.g_ck           = gs.getSession().getSessionToken();
-    data.error          = '';
-    data.success        = '';
-    data.loaded         = false;   // client only replaces its data when this is true
+    c.setViewMode = function (m) { c.viewMode = m; };
+    c.setPrivacyFilter = function (f) { c.privacyFilter = f; };
+    c.sidebarStoragePct = function () {
+        var total = (c.data && c.data.storage && c.data.storage.totalBytes) || 0;
+        var max = 5 * 1073741824; // 5 GB
+        return Math.min(100, Math.max(2, Math.round((total / max) * 100)));
+    };
 
-    var uName = gs.getUserDisplayName() || gs.getUserName() || 'SK';
-    data.user_name = uName;
-    var nameParts = uName.trim().split(/\s+/);
-    data.user_initials = nameParts.length > 1
-        ? (nameParts[0].charAt(0) + nameParts[nameParts.length - 1].charAt(0)).toUpperCase()
-        : (uName.length >= 2 ? uName.substring(0, 2).toUpperCase() : 'SK');
+    c.folderSort     = 'folder_name';   // folder_name | -folder_name | -sys_created_on
+    c.fileSort       = 'filename';
+    c.fileTypeFilter = '';
 
-    try {
-        if (input && input.action === 'search_users')     { searchUsers();    return; }
-        if (input && input.action === 'search_groups')    { searchGroups();   return; }
-        if (input && input.action === 'attach_to_record') { attachToRecord(); return; }
+    // Modals
+    c.showFolderModal        = false;
+    c.showShareModal         = false;
+    c.showEditFileModal      = false;
+    c.showRenameFileModal    = false;
+    c.showUploadFolderPicker = false;
+    c.showAddToFolderModal   = false;
+    c.previewFile            = null;
 
-        if (input && input.action) {
-            processAction();
-            /* do not reload after a failed action, or when the client asks to skip (batch uploads) */
-            if (data.error || input.skip_load) return;
+    c.addToFolderTarget = null;
+    c.addToFolderType   = 'file';
+    c.selectedAddFolder = '';
+    c.copyBusy          = false;
+
+    c.targetUploadFolder     = '';
+    c.targetUploadFolderName = '';
+
+    c.newFolderName        = '';
+    c.newFolderDescription = '';
+    c.newFolderColor       = 'orange';
+    c.editFolderTarget     = null;
+
+    c.folderColors = [
+        { id: 'orange', name: 'Orange', hex: '#f59e0b', bg: '#fffbeb', text: '#d97706' },
+        { id: 'blue',   name: 'Blue',   hex: '#3b82f6', bg: '#eff6ff', text: '#2563eb' },
+        { id: 'purple', name: 'Purple', hex: '#8b5cf6', bg: '#f5f3ff', text: '#7c3aed' },
+        { id: 'green',  name: 'Green',  hex: '#10b981', bg: '#ecfdf5', text: '#059669' },
+        { id: 'pink',   name: 'Pink',   hex: '#ec4899', bg: '#fdf2f8', text: '#db2777' }
+    ];
+
+    c.getFolderColor = function (folderId, file) {
+        if (file && file.folder_color) return file.folder_color;
+        if (!folderId) return 'orange';
+        var f = _allFolders().filter(function (item) { return item.sys_id === folderId; })[0];
+        return (f && f.color) ? f.color : 'orange';
+    };
+
+    c.renameFileTarget = null;
+    c.renameFileName   = '';
+
+    c.shareRecipientType  = 'user';
+    c.selectedUsers       = [];
+    c.selectedGroups      = [];
+    c.shareExpirationDate = null;
+    c.shareTarget         = null;
+    c.shareType           = 'file';
+    c.userSearchText      = '';
+    c.groupSearchText     = '';
+
+    c.editFileTarget      = null;
+    c.editFileDescription = '';
+
+    c.confirmModal = { show: false, title: '', message: '', confirmLabel: 'Confirm', danger: false, icon: 'fa-check', onConfirm: angular.noop };
+    c.contextMenu  = { show: false, x: 0, y: 0, item: null, type: '' };
+
+    c.uploading         = false;
+    c.uploadProgress    = 0;
+    c.uploadIndex       = 0;
+    c.uploadTotal       = 0;
+    c.uploadCurrentName = '';
+
+    c.allSelected = false;
+    c.dragOver    = false;
+    c.message     = '';
+    c.error       = '';
+    c.undo        = null;
+
+    /* Reusable pager template (used with ng-include + onload="pgKey='...'") */
+    $templateCache.put('fm-pager.html',
+        '<div class="fm-pagination" ng-if="c.page(pgKey).total">' +
+        '<span>Showing {{c.page(pgKey).start}}–{{c.page(pgKey).end}} of {{c.page(pgKey).total}}</span>' +
+        '<div class="fm-pagination-controls">' +
+        '<select ng-model="c.pageSize" ng-options="n for n in [10, 20, 50]" aria-label="Rows per page"></select>' +
+        '<button type="button" title="First page" ng-click="c.goToPage(pgKey, 1)" ng-disabled="c.page(pgKey).page <= 1">&laquo;</button>' +
+        '<button type="button" ng-click="c.previousPage(pgKey)" ng-disabled="c.page(pgKey).page <= 1">Previous</button>' +
+        '<button type="button" class="fm-page-num" ng-repeat="n in c.pageNumbers(pgKey) track by $index" ' +
+        'ng-class="{\'fm-page-active\': n === c.page(pgKey).page}" ng-disabled="n === \'…\'" ng-click="c.goToPage(pgKey, n)">{{n}}</button>' +
+        '<button type="button" ng-click="c.nextPage(pgKey)" ng-disabled="c.page(pgKey).page >= c.page(pgKey).pages">Next</button>' +
+        '<button type="button" title="Last page" ng-click="c.goToPage(pgKey, c.page(pgKey).pages)" ng-disabled="c.page(pgKey).page >= c.page(pgKey).pages">&raquo;</button>' +
+        '</div></div>');
+
+    /* ===================================================
+       PICKER MODE (opened from the attachment dialog)
+    =================================================== */
+    var _qs = $location.search();
+
+    c.pickerMode  = _qs.picker === 'true';
+    c.targetTable = _qs.target_table || '';
+    c.targetSysId = _qs.target_sys_id || '';
+    c.pickBusy    = false;
+
+    c.getSelectedFiles = function () {
+        var seen = {};
+        return ((c.data && c.data.files) || []).concat((c.data && c.data.sharedFiles) || []).filter(function (f) {
+            if (!f._selected || seen[f.sys_id]) return false;
+            seen[f.sys_id] = true;
+            return true;
+        });
+    };
+
+    c.attachFiles = function (ids) {
+        if (c.pickBusy || !ids || !ids.length) return;
+
+        if (!c.targetTable || !c.targetSysId) {
+            c.error = 'Missing target record. Open this page from the attachment dialog.';
+            return;
         }
 
-        loadData();
+        c.pickBusy = true;
+        _clearAlerts();
 
-    } catch (e) {
-        gs.error('FileManagerWidget error: ' + e.message + '\n' + e.stack);
-        data.error = 'An unexpected server error occurred. Please refresh and try again.';
+        c.server.get({
+            action: 'attach_to_record', file_ids: ids,
+            target_table: c.targetTable, target_sys_id: c.targetSysId
+        }).then(function (res) {
+            c.pickBusy = false;
+            var r = (res && res.data) ? res.data : res;
+
+            if (r && r.attached_count > 0) {
+                var msg = { type: 'FM_FILE_ATTACHED', count: r.attached_count };
+                try { var ch = new BroadcastChannel('fm_attach_channel'); ch.postMessage(msg); ch.close(); } catch (e) {}
+                try { if (window.opener) window.opener.postMessage(msg, window.location.origin); } catch (e) {}
+
+                if (r.error) c.error = r.error;
+                else window.close();
+            } else {
+                c.error = (r && r.error) || 'Could not attach the selected file(s).';
+            }
+        }, function () {
+            c.pickBusy = false;
+            c.error = 'Server request failed. Please try again.';
+        });
+    };
+
+    c.attachSelected = function () {
+        c.attachFiles(c.getSelectedFiles().map(function (f) { return f.sys_id; }));
+    };
+
+    /** Double-click: attach (picker mode) or preview (images) */
+    c.onRowDblClick = function (file) {
+        if (!file || !file.sys_id) return;
+        if (c.pickerMode) { c.attachFiles([file.sys_id]); return; }
+        if (c.isImage(file)) c.preview(file);
+    };
+
+    /** Picker mode: clicking a row toggles its selection */
+    c.rowClick = function (file, $event) {
+        c.closeContextMenu();
+        if (!c.pickerMode || !file) return;
+        var t = $event && $event.target;
+        if (t && /^(INPUT|BUTTON|A)$/i.test(t.tagName)) return;
+        file._selected = !file._selected;
+        c.onFileSelect();
+    };
+
+    /* ===================================================
+       NAVIGATION
+    =================================================== */
+
+    function _resetNav(view, subView) {
+        c.view              = view;
+        c.homeSubView       = subView || '';
+        c.currentFolder     = '';
+        c.currentFolderName = '';
+        c.searchText        = '';
+        c.breadcrumb        = [];
+        _clearAlerts();
+        _clearSelection();
+        c.closeContextMenu();
     }
 
-    /* ==================================================
-       ACTION DISPATCHER
-    ================================================== */
+    c.setHomeSubView = function (subView) {
+        _resetNav('home', subView);
+        if (subView === 'shared') c.sharedView = 'withMe';
+        c.resetPagination();
+    };
+    c.goHome  = function () { _resetNav('home', ''); c.resetPagination(); };
+    c.setView = function (view) {
+        _resetNav(view, '');
+        if (view === 'shared') c.sharedView = 'withMe';
+        c.resetPagination();
+    };
 
-    function processAction() {
-        switch (input.action) {
-            case 'refresh': break;
-            case 'create_folder':             createFolder();           break;
-            case 'rename_folder':             renameFolder();           break;
-            case 'create_file':               createFile();             break;
-            case 'discard_file':              discardFile();            break;
-            case 'update_file':               updateFile();             break;
-            case 'rename_file':               renameFile();             break;
-            case 'delete_file':               deleteFile();             break;
-            case 'delete_folder':             deleteFolder();           break;
-            case 'restore_file':              restoreFile();            break;
-            case 'restore_folder':            restoreFolder();          break;
-            case 'delete_file_permanent':     deleteFilePermanent();    break;
-            case 'delete_folder_permanent':   deleteFolderPermanent();  break;
-            case 'share':                     shareItem();              break;
-            case 'revoke_share':              revokeShare();            break;
-            case 'empty_bin':                 emptyBin();               break;
-            case 'add_shared_file_to_folder': addSharedFileToFolder();  break;
-            default:
-                data.error = 'Invalid action: ' + (input.action || '');
+    function _allFolders() { return ((c.data && c.data.folders) || []).concat((c.data && c.data.sharedFolders) || []); }
+    function _allFiles()   { return ((c.data && c.data.files) || []).concat((c.data && c.data.sharedFiles) || []); }
+
+    /** Build [root, ...ancestors, folder] crumbs by walking parent_folder links */
+    function _buildCrumbs(folder) {
+        var map = {};
+        _allFolders().forEach(function (f) { map[f.sys_id] = f; });
+
+        var owned = ((c.data && c.data.folders) || []).some(function (f) { return f.sys_id === folder.sys_id; });
+        var root  = owned ? { id: '', name: 'Folders', view: 'folders' }
+                          : { id: '', name: 'Shared with Me', view: 'shared' };
+
+        var chain = [], cur = folder, guard = 0;
+        while (cur && guard++ < 25) {
+            chain.unshift({ id: cur.sys_id, name: cur.folder_name });
+            cur = cur.parent_folder ? map[cur.parent_folder] : null;
         }
+        return [root].concat(chain);
     }
 
-    /* ==================================================
-       HELPERS & PERMISSIONS
-    ================================================== */
+    c.openFolder = function (folder, rebuild) {
+        if (!folder) return;
 
-    function getRecord(table, sysId) {
-        if (!sysId) return null;
+        if (c.view === 'files' && !rebuild && c.breadcrumb.length) {
+            c.breadcrumb.push({ id: folder.sys_id, name: folder.folder_name });
+        } else {
+            c.breadcrumb = _buildCrumbs(folder);
+        }
+
+        c.currentFolder     = folder.sys_id;
+        c.currentFolderName = folder.folder_name;
+        c.view              = 'files';
+        c.homeSubView       = '';
+        c.searchText        = '';
+        c.resetPagination();
+        _clearAlerts();
+        _clearSelection();
+        c.closeContextMenu();
+    };
+
+    c.openFolderById = function (folderId) {
+        if (!folderId) return;
+        var folder = _allFolders().filter(function (f) { return f.sys_id === folderId; })[0];
+        if (folder) c.openFolder(folder, true);
+    };
+
+    c.navigateBreadcrumb = function (index) {
+        var crumb = c.breadcrumb[index];
+        if (!crumb) return;
+
+        if (!crumb.id) { c.setView(crumb.view || 'folders'); return; }
+
+        c.breadcrumb        = c.breadcrumb.slice(0, index + 1);
+        c.currentFolder     = crumb.id;
+        c.currentFolderName = crumb.name;
+        c.view              = 'files';
+        c.homeSubView       = '';
+        c.searchText        = '';
+        c.resetPagination();
+        _clearSelection();
+        c.closeContextMenu();
+    };
+
+    c.navigateBack = function () {
+        if (c.breadcrumb.length > 2) c.navigateBreadcrumb(c.breadcrumb.length - 2);
+        else c.navigateBreadcrumb(0);
+    };
+
+    c.backLabel = function () {
+        if (c.breadcrumb.length > 2) return 'Back';
+        return 'Back to ' + ((c.breadcrumb[0] && c.breadcrumb[0].name) || 'Folders');
+    };
+
+    /* ===================================================
+       FOLDER & FILE QUERIES
+    =================================================== */
+
+    c.rootFolders = function () {
+        return ((c.data && c.data.folders) || []).filter(function (f) { return !f.parent_folder; });
+    };
+    c.sharedRootFolders = function () {
+        return ((c.data && c.data.sharedFolders) || []).filter(function (f) { return f.share_root; });
+    };
+    c.sharedRootFiles = function () {
+        return ((c.data && c.data.sharedFiles) || []).filter(function (f) { return f.share_root; });
+    };
+    c.sharedCount = function () { return c.sharedRootFolders().length + c.sharedRootFiles().length; };
+    c.recycleCount = function () {
+        return (((c.data && c.data.recycleFiles) || []).length) + (((c.data && c.data.recycleFolders) || []).length);
+    };
+
+    c.editableFolders = function () {
+        var owned = (c.data && c.data.folders) || [];
+        var sharedEdit = ((c.data && c.data.sharedFolders) || []).filter(function (f) { return f.can_edit; });
+        return owned.concat(sharedEdit);
+    };
+
+    c.ownedFolders = function () {
+        return ((c.data && c.data.folders) || []).filter(function (f) { return f.permission === 'Owner'; });
+    };
+
+    c.foldersInCurrentFolder = function () {
+        var seen = {};
+        return _allFolders().filter(function (f) {
+            if (!f || seen[f.sys_id]) return false;
+            seen[f.sys_id] = true;
+            return (f.parent_folder || '') === (c.currentFolder || '');
+        });
+    };
+
+    c.filesInCurrentFolder = function () {
+        var seen = {};
+        return _allFiles().filter(function (f) {
+            if (!f || seen[f.sys_id]) return false;
+            seen[f.sys_id] = true;
+            return (f.folder || '') === (c.currentFolder || '');
+        });
+    };
+
+    c.currentFolderCanEdit = function () {
+        if (!c.currentFolder) return false;
+        var match = _allFolders().filter(function (f) { return f.sys_id === c.currentFolder; })[0];
+        return !!(match && match.can_edit);
+    };
+
+    c.getFolderName = function (folderId, file) {
+        if (file && file.folder_name) return file.folder_name;
+        if (!folderId) return '';
+        var f = _allFolders().filter(function (item) { return item.sys_id === folderId; })[0];
+        return f ? f.folder_name : '';
+    };
+
+    c.allFilesFiltered = function () {
+        return ((c.data && c.data.files) || []).filter(function (file) {
+            if (c.searchText) {
+                var hit = (file.filename || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
+                if (!hit) return false;
+            }
+            if (!c.fileTypeFilter) return true;
+
+            var ext = (file.file_extension || '').toLowerCase();
+            switch (c.fileTypeFilter) {
+                case 'image':    return ['png','jpg','jpeg','gif','webp','bmp','svg'].indexOf(ext) !== -1;
+                case 'document': return ['doc','docx','odt','rtf','txt','md','xls','xlsx','csv','ppt','pptx'].indexOf(ext) !== -1;
+                case 'pdf':      return ext === 'pdf';
+                case 'archive':  return ['zip','rar','7z','tar','gz'].indexOf(ext) !== -1;
+                default:         return true;
+            }
+        });
+    };
+
+    c.searchFiles = function (file) {
+        if (!c.searchText) return true;
+        return (file.filename || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
+    };
+
+    c.searchFolders = function (folder) {
+        if (!c.searchText) return true;
+        return (folder.folder_name || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
+    };
+
+    /** Newest 5 files (server already returns owned files newest-first) */
+    c.recentFiles = function () { return ((c.data && c.data.files) || []).slice(0, 5); };
+
+    /* ---- file / folder counts shown on folder cards (cached per data load) ---- */
+    var _cc = { ref: null, f: {}, d: {} };
+    function _buildCounts() {
+        if (_cc.ref === c.data) return;
+        _cc = { ref: c.data, f: {}, d: {} };
+        var seenF = {}, seenD = {};
+        _allFiles().forEach(function (x) {
+            if (!x.folder || seenF[x.sys_id]) return;
+            seenF[x.sys_id] = 1;
+            _cc.f[x.folder] = (_cc.f[x.folder] || 0) + 1;
+        });
+        _allFolders().forEach(function (x) {
+            if (!x.parent_folder || seenD[x.sys_id]) return;
+            seenD[x.sys_id] = 1;
+            _cc.d[x.parent_folder] = (_cc.d[x.parent_folder] || 0) + 1;
+        });
+    }
+    /** "1 file" / "3 files" */
+    c.countLabel = function (n, word) { return n + ' ' + word + (n === 1 ? '' : 's'); };
+
+    c.folderCounts = function (folder) {
+        _buildCounts();
+        return { files: _cc.f[folder.sys_id] || 0, folders: _cc.d[folder.sys_id] || 0 };
+    };
+
+    /** Find an item by type + id (used by the right-click handler) */
+    c.findItem = function (type, id) {
+        var d = c.data || {};
+        var lists = {
+            file:           (d.files || []).concat(d.sharedFiles || []),
+            folder:         (d.folders || []).concat(d.sharedFolders || []),
+            recycle_file:   d.recycleFiles || [],
+            recycle_folder: d.recycleFolders || []
+        };
+        return (lists[type] || []).filter(function (x) { return x.sys_id === id; })[0] || null;
+    };
+
+    /* ===================================================
+       CLIENT-SIDE LISTS + PAGINATION
+       Everything is filtered/sorted first, then paged, so search
+       and sort work across the complete result set.
+    =================================================== */
+    function _sortFiles(list)   { return $filter('orderBy')(list, c.fileSort); }
+    function _sortFolders(list) { return $filter('orderBy')(list, c.folderSort); }
+
+    var _lists = {
+        allFiles:      function () { return _sortFiles(c.allFilesFiltered()); },
+        rootFolders:   function () { return _sortFolders(c.rootFolders().filter(c.searchFolders)); },
+        childFolders:  function () { return _sortFolders(c.foldersInCurrentFolder().filter(c.searchFolders)); },
+        folderFiles:   function () { return _sortFiles(c.filesInCurrentFolder().filter(c.searchFiles)); },
+        sharedFolders: function () { return _sortFolders(c.sharedRootFolders().filter(c.searchFolders)); },
+        sharedFiles:   function () { return _sortFiles(c.sharedRootFiles().filter(c.searchFiles)); },
+        sharedByMe:    function () {
+            var q = (c.searchText || '').toLowerCase();
+            return ((c.data && c.data.sharedByMe) || []).filter(function (s) {
+                if (!q) return true;
+                return (s.item_name || '').toLowerCase().indexOf(q) !== -1 ||
+                       (s.shared_with || '').toLowerCase().indexOf(q) !== -1;
+            });
+        }
+    };
+
+    c.page = function (key) {
+        var fn   = _lists[key];
+        var list = fn ? fn() : [];
+        var pages = Math.max(1, Math.ceil(list.length / c.pageSize));
+        var page  = Math.min(Math.max(c.currentPages[key] || 1, 1), pages);
+        var start = (page - 1) * c.pageSize;
+        return {
+            items: list.slice(start, start + c.pageSize),
+            page: page, pages: pages, total: list.length,
+            start: list.length ? start + 1 : 0,
+            end: Math.min(page * c.pageSize, list.length)
+        };
+    };
+    c.goToPage = function (key, n) {
+        if (typeof n !== 'number') return;
+        c.currentPages[key] = Math.min(Math.max(1, n), c.page(key).pages);
+    };
+    /** Page buttons: 1 … 4 5 [6] 7 8 … 20 */
+    c.pageNumbers = function (key) {
+        var p = c.page(key), out = [], i;
+        if (p.pages <= 7) { for (i = 1; i <= p.pages; i++) out.push(i); return out; }
+        out.push(1);
+        var from = Math.max(2, p.page - 1), to = Math.min(p.pages - 1, p.page + 1);
+        if (from > 2) out.push('…');
+        for (i = from; i <= to; i++) out.push(i);
+        if (to < p.pages - 1) out.push('…');
+        out.push(p.pages);
+        return out;
+    };
+    c.previousPage = function (key) { c.currentPages[key] = Math.max(1, c.page(key).page - 1); };
+    c.nextPage     = function (key) { var p = c.page(key); c.currentPages[key] = Math.min(p.pages, p.page + 1); };
+    c.resetPagination = function () {
+        Object.keys(c.currentPages).forEach(function (key) { c.currentPages[key] = 1; });
+    };
+    c.setSharedView = function (view) {
+        c.sharedView = view === 'byMe' ? 'byMe' : 'withMe';
+        c.resetPagination();
+        _clearSelection();
+    };
+
+    $scope.$watch(function () {
+        return c.searchText + '|' + c.fileTypeFilter + '|' + c.pageSize + '|' + c.fileSort + '|' + c.folderSort;
+    }, function (n, o) { if (n !== o) c.resetPagination(); });
+
+    /* ===================================================
+       SORTING
+    =================================================== */
+    c.toggleSort = function (field) {
+        if (c.fileSort === field)            c.fileSort = '-' + field;
+        else if (c.fileSort === '-' + field) c.fileSort = field;
+        else                                 c.fileSort = field;
+    };
+    c.getSortIcon = function (field) {
+        if (c.fileSort === field)       return 'fa-sort-asc';
+        if (c.fileSort === '-' + field) return 'fa-sort-desc';
+        return 'fa-sort';
+    };
+
+    /* ===================================================
+       SERVER ACTIONS & REFRESH
+    =================================================== */
+
+    /** c.data is replaced ONLY when the server says it fully loaded (data.loaded). */
+    c.runAction = function (action, values) {
+        values        = values || {};
+        values.action = action;
+        _clearAlerts();
+
+        return c.server.get(values).then(function (res) {
+            var r = (res && res.data) ? res.data : res;
+            if (r) {
+                if (r.loaded) c.data = r;
+                if (r.error) c.error = r.error;
+                else if (r.success && !values.skip_load) c.message = r.success;
+            }
+            return r || {};
+        }, function () {
+            c.error = 'Server request failed. Please try again.';
+            return { error: c.error };
+        });
+    };
+
+    c.refresh = function (keepAlerts) {
+        c.loading = true;
+        if (keepAlerts !== true) _clearAlerts();
+
+        return c.server.get({ action: 'refresh' }).then(function (res) {
+            c.loading = false;
+            var r = (res && res.data) ? res.data : res;
+            if (r && r.loaded) c.data = r;
+            return c.data;
+        }, function () {
+            c.loading = false;
+            c.error = 'Unable to refresh. Please try again.';
+            return c.data;
+        });
+    };
+
+    /* Auto-dismiss success messages (longer when there is an Undo button) */
+    var _msgTimer;
+    $scope.$watch(function () { return c.message; }, function (v) {
+        if (_msgTimer) $timeout.cancel(_msgTimer);
+        if (v) _msgTimer = $timeout(function () { c.message = ''; c.undo = null; }, c.undo ? 8000 : 4000);
+    });
+
+    c.setUndo = function (fn) { c.undo = { fn: fn }; };
+    c.runUndo = function () {
+        var fn = c.undo && c.undo.fn;
+        c.undo = null;
+        if (fn) fn();
+    };
+
+    /* ===================================================
+       UPLOAD
+    =================================================== */
+
+    c.openUploadFolderPicker = function () {
+        var available = c.editableFolders();
+        if (c.currentFolder && c.currentFolderCanEdit()) {
+            c.targetUploadFolder     = c.currentFolder;
+            c.targetUploadFolderName = c.currentFolderName;
+        } else if (available.length > 0) {
+            c.targetUploadFolder     = available[0].sys_id;
+            c.targetUploadFolderName = available[0].folder_name;
+        } else {
+            c.targetUploadFolder     = '';
+            c.targetUploadFolderName = '';
+        }
+        c.showUploadFolderPicker = true;
+    };
+
+    /* The three entry points below receive plain arrays of File objects
+       (the link function reads the <input> and passes the files in). */
+    c.onPickerFilesSelected = function (files) {
+        files = Array.prototype.slice.call(files || []);
+        if (!files.length) return;
+        var folderId = c.targetUploadFolder;
+        c.showUploadFolderPicker = false;
+        _uploadFilesToFolder(files, folderId);
+    };
+
+    c.onDirectFilesSelected = function (files) {
+        files = Array.prototype.slice.call(files || []);
+        if (!files.length) return;
+        _uploadFilesToFolder(files, c.currentFolder);
+    };
+
+    /** Used by drag & drop onto a folder card */
+    c.uploadToFolder = function (files, folderId) {
+        files = Array.prototype.slice.call(files || []);
+        if (!files.length) return;
+        _uploadFilesToFolder(files, folderId);
+    };
+
+    function _uploadFilesToFolder(fileList, folderId) {
+        var files = Array.prototype.slice.call(fileList || []);
+        if (!files.length) return;
+        if (!folderId) { c.error = 'Please select a destination folder before uploading.'; return; }
+        _uploadItems(files.map(function (f) { return { file: f, folderId: folderId }; }));
+    }
+
+    /** items: [{ file: File, folderId: sys_id }] */
+    function _uploadItems(items) {
+        if (!items.length) return;
+        if (c.uploading) { c.error = 'An upload is already in progress. Please wait.'; return; }
+
+        var total = items.length, index = 0, failed = [];
+
+        c.uploading         = true;
+        c.uploadProgress    = 0;
+        c.uploadIndex       = 0;
+        c.uploadTotal       = total;
+        c.uploadCurrentName = '';
+        _clearAlerts();
+
+        function finish() {
+            c.uploading = false;
+            c.refresh(true).then(function () {
+                if (failed.length) {
+                    c.error = 'Failed to upload: ' + failed.join(', ');
+                } else {
+                    c.message = total === 1
+                        ? '"' + items[0].file.name + '" uploaded successfully.'
+                        : total + ' files uploaded successfully.';
+                }
+            });
+        }
+
+        function next() {
+            if (index >= total) { finish(); return; }
+
+            var item = items[index++];
+            var file = item.file;
+            var ext  = file.name.indexOf('.') !== -1 ? file.name.split('.').pop().toLowerCase() : '';
+
+            c.uploadIndex       = index;
+            c.uploadCurrentName = file.name;
+            c.uploadProgress    = Math.round(((index - 1) / total) * 100);
+
+            c.runAction('create_file', {
+                filename: file.name, extension: ext,
+                content_type: file.type || 'application/octet-stream',
+                file_size: file.size, folder: item.folderId, skip_load: '1'
+            }).then(function (result) {
+                if (result.error || !result.file_sys_id) {
+                    failed.push(file.name);
+                    next();
+                    return;
+                }
+
+                var uploadUrl =
+                    '/api/now/attachment/file' +
+                    '?table_name=x_1830514_fm_file' +
+                    '&table_sys_id=' + encodeURIComponent(result.file_sys_id) +
+                    '&file_name='    + encodeURIComponent(file.name);
+
+                var token = window.g_ck || (c.data && c.data.g_ck) || '';
+                var headers = { 'Content-Type': file.type || 'application/octet-stream', 'Accept': 'application/json' };
+                if (token) headers['X-UserToken'] = token;
+
+                $http.post(uploadUrl, file, { transformRequest: angular.identity, headers: headers }).then(function () {
+                    c.uploadProgress = Math.round((index / total) * 100);
+                    next();
+                }, function () {
+                    failed.push(file.name);
+                    // remove the orphan record that has no attachment
+                    c.runAction('discard_file', { sys_id: result.file_sys_id, skip_load: '1' }).then(function () { next(); });
+                });
+            });
+        }
+        next();
+    }
+
+    /* ---------- Folder upload (keeps the sub-folder structure) ---------- */
+
+    c.openFolderUploadPicker = function () { c.triggerFolderUpload(); };
+
+    c.triggerFolderUpload = function () {
+        var input = document.getElementById('fmFolderUpload');
+        if (input) { input.value = ''; input.click(); }
+        else c.error = 'Folder upload input was not found.';
+    };
+
+    c.onFolderUploadSelected = function (files) {
+        files = Array.prototype.slice.call(files || []);
+        if (!files.length) return;
+        if (c.currentFolder && !c.currentFolderCanEdit()) {
+            c.error = 'You do not have permission to upload into this folder.';
+            return;
+        }
+        _uploadFolderTree(files, c.currentFolder || '');
+    };
+
+    function _uploadFolderTree(files, baseParent) {
+        if (c.uploading) { c.error = 'An upload is already in progress. Please wait.'; return; }
+
+        var dirs = {};
+        files.forEach(function (f) {
+            var parts = (f.webkitRelativePath || f.name).split('/');
+            parts.pop();
+            var acc = '';
+            parts.forEach(function (p) { acc = acc ? acc + '/' + p : p; dirs[acc] = true; });
+        });
+
+        var paths = Object.keys(dirs).sort(function (a, b) {
+            var d = a.split('/').length - b.split('/').length;
+            return d !== 0 ? d : (a < b ? -1 : 1);
+        });
+
+        if (!paths.length) { c.error = 'Unable to identify the selected folder.'; return; }
+
+        var idMap = {}, i = 0;
+
+        c.uploading         = true;
+        c.uploadTotal       = files.length;
+        c.uploadIndex       = 0;
+        c.uploadProgress    = 0;
+        c.uploadCurrentName = 'Creating folders...';
+        _clearAlerts();
+
+        function nextDir() {
+            if (i >= paths.length) {
+                c.uploading = false;
+                var items = files.map(function (f) {
+                    var parts = (f.webkitRelativePath || f.name).split('/');
+                    parts.pop();
+                    return { file: f, folderId: idMap[parts.join('/')] };
+                }).filter(function (it) { return !!it.folderId; });
+                _uploadItems(items);
+                return;
+            }
+
+            var path   = paths[i++];
+            var parts  = path.split('/');
+            var name   = parts.pop();
+            var parent = parts.length ? idMap[parts.join('/')] : baseParent;
+
+            c.runAction('create_folder', {
+                folder_name: name, description: 'Uploaded folder',
+                parent_folder: parent || '', reuse_existing: '1', skip_load: '1'
+            }).then(function (r) {
+                if (r.error || !r.folder_sys_id) {
+                    c.uploading = false;
+                    c.error = r.error || ('Unable to create folder "' + name + '".');
+                    return;
+                }
+                idMap[path] = r.folder_sys_id;
+                nextDir();
+            });
+        }
+        nextDir();
+    }
+
+    /* ===================================================
+       CREATE & RENAME FOLDER
+    =================================================== */
+
+    c.openFolderModal = function () {
+        c.newFolderName = '';
+        c.newFolderDescription = '';
+        c.newFolderColor = 'orange'; // Default is orange
+        c.editFolderTarget = null;
+        _clearAlerts();
+        c.showFolderModal = true;
+        $timeout(function () { var el = document.getElementById('fmFolderNameInput'); if (el) el.focus(); }, 60);
+    };
+
+    c.openRenameFolder = function (folder) {
+        c.newFolderName = folder.folder_name;
+        c.newFolderDescription = '';
+        c.newFolderColor = folder.color || 'orange';
+        c.editFolderTarget = folder;
+        _clearAlerts();
+        c.showFolderModal = true;
+        $timeout(function () { var el = document.getElementById('fmFolderNameInput'); if (el) { el.focus(); el.select(); } }, 60);
+    };
+
+    c.closeFolderModal = function () {
+        c.showFolderModal = false; c.editFolderTarget = null;
+        c.newFolderName = ''; c.newFolderDescription = '';
+        c.newFolderColor = 'orange';
+    };
+
+    c.onFolderNameKey = function ($event) {
+        if ($event.keyCode === 13) {
+            if (c.editFolderTarget) c.renameFolder(); else c.createFolder();
+        }
+    };
+
+    c.createFolder = function () {
+        var name = (c.newFolderName || '').trim();
+        if (!name) { c.error = 'Please enter a folder name.'; return; }
+
+        c.runAction('create_folder', {
+            folder_name: name,
+            description: c.newFolderDescription || '',
+            parent_folder: c.currentFolder || '',
+            color: c.newFolderColor || 'orange'
+        }).then(function (result) {
+            if (result.error) return;      // stay in the modal and show the error
+            c.closeFolderModal();
+        });
+    };
+
+    c.renameFolder = function () {
+        var name = (c.newFolderName || '').trim();
+        if (!name) { c.error = 'Please enter a folder name.'; return; }
+
+        var target = c.editFolderTarget;
+        c.runAction('rename_folder', {
+            sys_id: target.sys_id,
+            folder_name: name,
+            color: c.newFolderColor || 'orange'
+        }).then(function (result) {
+            if (result.error) return;
+            if (c.currentFolder === target.sys_id) c.currentFolderName = name;
+            c.breadcrumb.forEach(function (b) { if (b.id === target.sys_id) b.name = name; });
+            c.closeFolderModal();
+        });
+    };
+
+    /* ===================================================
+       RENAME FILE + EDIT DESCRIPTION
+    =================================================== */
+
+    c.openRenameFile = function (file) {
+        c.renameFileTarget = file;
+        c.renameFileName   = file.filename;
+        _clearAlerts();
+        c.showRenameFileModal = true;
+    };
+
+    c.saveRenameFile = function () {
+        var name = (c.renameFileName || '').trim();
+        if (!name) { c.error = 'Please enter a file name.'; return; }
+        c.runAction('rename_file', { sys_id: c.renameFileTarget.sys_id, filename: name }).then(function (r) {
+            if (!r.error) { c.showRenameFileModal = false; c.renameFileTarget = null; }
+        });
+    };
+
+    c.openEditFile = function (file) {
+        c.editFileTarget      = file;
+        c.editFileDescription = file.description || '';
+        _clearAlerts();
+        c.showEditFileModal   = true;
+    };
+
+    /** save edited description */
+    c.saveEditFile = function () {
+        if (!c.editFileTarget) return;
+        c.runAction('update_file', {
+            sys_id: c.editFileTarget.sys_id, description: c.editFileDescription || ''
+        }).then(function (r) {
+            if (!r.error) { c.showEditFileModal = false; c.editFileTarget = null; }
+        });
+    };
+
+    /* ===================================================
+       ADD SHARED FILE / FOLDER TO MY FOLDER (copy)
+    =================================================== */
+
+    c.openAddToFolder = function (item, type) {
+        if (!item) return;
+        c.addToFolderTarget    = item;
+        // Files also carry a folder_name, so the type must come from the caller
+        c.addToFolderType      = type || (item.filename ? 'file' : 'folder');
+        c.selectedAddFolder    = '';
+        c.showAddToFolderModal = true;
+        c.closeContextMenu();
+        _clearAlerts();
+    };
+
+    c.closeAddToFolder = function () {
+        c.showAddToFolderModal = false;
+        c.addToFolderTarget = null;
+        c.selectedAddFolder = '';
+        c.copyBusy = false;
+    };
+
+    c.addSharedFileToFolder = function () {
+        var item = c.addToFolderTarget;
+        if (!item || !c.selectedAddFolder) { c.error = 'Please select a destination folder.'; return; }
+        if (c.copyBusy) return;
+
+        c.copyBusy = true;
+        c.runAction('add_shared_file_to_folder', {
+            sys_id: item.sys_id, folder_id: c.selectedAddFolder, item_type: c.addToFolderType
+        }).then(function (r) {
+            c.copyBusy = false;
+            if (r.error) return;           // keep the modal open and show the error
+            c.closeAddToFolder();          // server already reloaded the data
+        });
+    };
+
+    /* ===================================================
+       SHARE
+    =================================================== */
+
+    c.openShare = function (item, type) {
+        c.shareTarget         = item;
+        c.shareType           = type;
+        c.shareRecipientType  = 'user';
+        c.selectedUsers       = [];
+        c.selectedGroups      = [];
+        c.shareExpirationDate = null;
+        c.userSearchText      = '';
+        c.userSearchError     = '';
+        c.groupSearchText     = '';
+        c.groupSearchError    = '';
+        _clearAlerts();
+        if (c.data) { c.data.users = []; c.data.groups = []; }
+        c.showShareModal = true;
+    };
+
+    c.setShareRecipientType = function (type) {
+        c.shareRecipientType = type;
+        c.selectedUsers = []; c.selectedGroups = [];
+        c.userSearchText = ''; c.groupSearchText = '';
+        c.userSearchError = ''; c.groupSearchError = '';
+        if (c.data) { c.data.users = []; c.data.groups = []; }
+    };
+
+    c.addUser = function (user) {
+        if (!c.isUserSelected(user.sys_id)) c.selectedUsers.push(user);
+        c.userSearchText = '';
+        c.data.users = [];
+    };
+    c.removeUser     = function (index) { c.selectedUsers.splice(index, 1); };
+    c.isUserSelected = function (id) { return c.selectedUsers.some(function (u) { return u.sys_id === id; }); };
+
+    c.addGroup = function (group) {
+        if (!c.isGroupSelected(group.sys_id)) c.selectedGroups.push(group);
+        c.groupSearchText = '';
+        c.data.groups = [];
+    };
+    c.removeGroup     = function (index) { c.selectedGroups.splice(index, 1); };
+    c.isGroupSelected = function (id) { return c.selectedGroups.some(function (g) { return g.sys_id === id; }); };
+
+    c.searchUsers = function () {
+        if (c.userSearchTimer) $timeout.cancel(c.userSearchTimer);
+
+        var term = (c.userSearchText || '').trim();
+        c.userSearchError = '';
+        if (c.data) c.data.users = [];
+        if (term.length < 2) { c.userSearchLoading = false; return; }
+
+        c.userSearchTimer = $timeout(function () {
+            c.userSearchLoading = true;
+            c.server.get({ action: 'search_users', search_term: term }).then(function (res) {
+                if (term !== (c.userSearchText || '').trim()) return;
+                var ret = (res && res.data) ? res.data : res;
+                c.data.users        = (ret && ret.users) || [];
+                c.userSearchLoading = false;
+            }, function () {
+                c.userSearchLoading = false;
+                c.userSearchError   = 'Unable to search users.';
+            });
+        }, 300);
+    };
+
+    c.searchGroups = function () {
+        if (c.groupSearchTimer) $timeout.cancel(c.groupSearchTimer);
+
+        var term = (c.groupSearchText || '').trim();
+        c.groupSearchError = '';
+        if (c.data) c.data.groups = [];
+        if (term.length < 2) { c.groupSearchLoading = false; return; }
+
+        c.groupSearchTimer = $timeout(function () {
+            c.groupSearchLoading = true;
+            c.server.get({ action: 'search_groups', search_term: term }).then(function (res) {
+                if (term !== (c.groupSearchText || '').trim()) return;
+                var ret = (res && res.data) ? res.data : res;
+                c.data.groups        = (ret && ret.groups) || [];
+                c.groupSearchLoading = false;
+            }, function () {
+                c.groupSearchLoading = false;
+                c.groupSearchError   = 'Unable to search groups.';
+            });
+        }, 300);
+    };
+
+    c.shareItem = function () {
+        if (!c.shareTarget) { c.error = 'No item selected to share.'; return; }
+
+        if (c.shareRecipientType === 'user' && c.selectedUsers.length === 0) { c.error = 'Please select at least one user to share with.'; return; }
+        if (c.shareRecipientType === 'group' && c.selectedGroups.length === 0) { c.error = 'Please select at least one group to share with.'; return; }
+
+        var expiry = '';
+        if (c.shareExpirationDate) {
+            var d = new Date(c.shareExpirationDate);
+            if (isNaN(d.getTime())) { c.error = 'Invalid expiration date.'; return; }
+            if (d.getTime() <= Date.now()) { c.error = 'Expiration date must be in the future.'; return; }
+            expiry = d.toISOString();
+        }
+
+        c.runAction('share', {
+            sys_id: c.shareTarget.sys_id, type: c.shareType, recipient_type: c.shareRecipientType,
+            user_ids:  c.selectedUsers.map(function (u) { return u.sys_id; }).join(','),
+            group_ids: c.selectedGroups.map(function (g) { return g.sys_id; }).join(','),
+            expiration_date: expiry
+        }).then(function (result) {
+            if (result.error) return;
+            c.showShareModal = false;
+            c.shareTarget    = null;
+        });
+    };
+
+    c.confirmRevoke = function (share) {
+        _confirm({
+            title: 'Revoke Access',
+            message: 'Stop sharing "' + share.item_name + '" with ' + (share.shared_with || 'the recipients') + '?',
+            confirmLabel: 'Revoke', icon: 'fa-ban',
+            onConfirm: function () { c.runAction('revoke_share', { sys_id: share.sys_id }); }
+        });
+    };
+
+    /* ===================================================
+       CONFIRMATION & DELETION
+    =================================================== */
+
+    function _confirm(opts) {
+        c.confirmModal = {
+            show: true, title: opts.title || 'Are you sure?', message: opts.message || '',
+            confirmLabel: opts.confirmLabel || 'Confirm', danger: opts.danger !== false,
+            icon: opts.icon || 'fa-check', onConfirm: opts.onConfirm || angular.noop
+        };
+    }
+
+    c.runConfirm = function () {
+        var fn = c.confirmModal.onConfirm;
+        c.confirmModal.show = false;
+        fn();
+    };
+
+    c.confirmDeleteFile = function (file) {
+        _confirm({
+            title: 'Move to Recycle Bin', message: 'Move "' + file.filename + '" to the Recycle Bin?',
+            confirmLabel: 'Move to Bin', icon: 'fa-trash',
+            onConfirm: function () { c.deleteFile(file); }
+        });
+    };
+
+    c.confirmDeleteFolder = function (folder) {
+        _confirm({
+            title: 'Move Folder to Recycle Bin',
+            message: 'Move folder "' + folder.folder_name + '" to the Recycle Bin? Note: all subfolders and files inside must be removed or moved first.',
+            confirmLabel: 'Move to Bin', icon: 'fa-trash',
+            onConfirm: function () { c.deleteFolder(folder); }
+        });
+    };
+
+    c.confirmPermanentDeleteFile = function (file) {
+        _confirm({
+            title: 'Delete File Permanently', message: 'Permanently delete "' + file.filename + '"? This action CANNOT be undone.',
+            confirmLabel: 'Delete Permanently', icon: 'fa-times', danger: true,
+            onConfirm: function () { c.deleteFilePermanent(file); }
+        });
+    };
+
+    c.confirmPermanentDeleteFolder = function (folder) {
+        _confirm({
+            title: 'Delete Folder Permanently', message: 'Permanently delete folder "' + folder.folder_name + '"? This action CANNOT be undone.',
+            confirmLabel: 'Delete Permanently', icon: 'fa-times', danger: true,
+            onConfirm: function () { c.deleteFolderPermanent(folder); }
+        });
+    };
+
+    c.canDeleteSelected = function () {
+        return c.getSelectedFiles().some(function (f) { return f.permission === 'Owner'; });
+    };
+
+    c.confirmDeleteSelected = function () {
+        var owned = c.getSelectedFiles().filter(function (f) { return f.permission === 'Owner'; });
+        if (!owned.length) return;
+        _confirm({
+            title: 'Delete Selected Files',
+            message: 'Move ' + owned.length + ' selected file(s) to the Recycle Bin? (Only files you own are deleted.)',
+            confirmLabel: 'Move to Bin', icon: 'fa-trash',
+            onConfirm: function () { _deleteBatch(owned); }
+        });
+    };
+
+    c.confirmEmptyBin = function () {
+        _confirm({
+            title: 'Empty Recycle Bin',
+            message: 'Permanently delete all files and folders in the Recycle Bin? This action CANNOT be undone.',
+            confirmLabel: 'Empty Bin', icon: 'fa-trash', danger: true,
+            onConfirm: function () { c.emptyBin(); }
+        });
+    };
+
+    function _deleteBatch(files) {
+        if (!files.length) { c.error = 'Only files you own can be moved to the Recycle Bin.'; return; }
+
+        var idx = 0, done = 0, errors = [], doneIds = [];
+        _clearAlerts();
+
+        function next() {
+            if (idx >= files.length) {
+                c.refresh(true).then(function () {
+                    if (errors.length) c.error = 'Could not delete: ' + errors.join(', ');
+                    else {
+                        c.message = done + ' file(s) moved to the Recycle Bin.';
+                        c.setUndo(function () { _restoreBatch(doneIds); });
+                    }
+                });
+                return;
+            }
+            var f = files[idx++];
+            c.runAction('delete_file', { sys_id: f.sys_id, skip_load: '1' }).then(function (r) {
+                if (r.error) errors.push(f.filename); else { done++; doneIds.push(f.sys_id); }
+                next();
+            });
+        }
+        next();
+    }
+
+    function _restoreBatch(ids) {
+        var i = 0, ok = 0;
+        function next() {
+            if (i >= ids.length) {
+                c.refresh(true).then(function () { c.message = ok + ' file(s) restored.'; });
+                return;
+            }
+            c.runAction('restore_file', { sys_id: ids[i++], skip_load: '1' }).then(function (r) { if (!r.error) ok++; next(); });
+        }
+        next();
+    }
+
+    /* ===================================================
+       CRUD ACTIONS (server reloads all data on success)
+    =================================================== */
+
+    c.deleteFile = function (file) {
+        return c.runAction('delete_file', { sys_id: file.sys_id }).then(function (r) {
+            if (!r.error) c.setUndo(function () { c.restoreFile({ sys_id: file.sys_id }); });
+            return r;
+        });
+    };
+    c.deleteFolder = function (folder) {
+        return c.runAction('delete_folder', { sys_id: folder.sys_id }).then(function (r) {
+            if (!r.error) c.setUndo(function () { c.restoreFolder({ sys_id: folder.sys_id }); });
+            return r;
+        });
+    };
+    c.restoreFile           = function (file)   { return c.runAction('restore_file',            { sys_id: file.sys_id }); };
+    c.restoreFolder         = function (folder) { return c.runAction('restore_folder',          { sys_id: folder.sys_id }); };
+    c.deleteFilePermanent   = function (file)   { return c.runAction('delete_file_permanent',   { sys_id: file.sys_id }); };
+    c.deleteFolderPermanent = function (folder) { return c.runAction('delete_folder_permanent', { sys_id: folder.sys_id }); };
+    c.emptyBin              = function ()       { return c.runAction('empty_bin'); };
+
+    /* ===================================================
+       DOWNLOAD & PREVIEW
+    =================================================== */
+
+    c.downloadFile = function (file) {
+        if (!file || !file.attachment_id) { c.error = 'Attachment not found.'; return; }
+        window.open('/sys_attachment.do?sys_id=' + encodeURIComponent(file.attachment_id), '_blank');
+    };
+
+    c.downloadSelected = function () {
+        c.getSelectedFiles().forEach(function (f, i) {
+            $timeout(function () { c.downloadFile(f); }, i * 350);
+        });
+    };
+
+    c.isImage = function (file) {
+        if (!file) return false;
+        var ext  = (file.file_extension || '').toLowerCase();
+        var type = (file.content_type   || '').toLowerCase();
+        return type.indexOf('image/') === 0 || ['png','jpg','jpeg','gif','webp','bmp','svg'].indexOf(ext) !== -1;
+    };
+
+    c.preview = function (file) {
+        if (!file || !file.attachment_id) { c.error = 'Attachment not found.'; return; }
+        c.previewFile = file;
+    };
+    c.closePreview = function () { c.previewFile = null; };
+
+    /** Images available for ← / → navigation inside the preview */
+    c.previewImages = function () {
+        if (!c.previewFile) return [];
+        var list = c.visibleFiles().filter(c.isImage);
+        var found = list.some(function (f) { return f.sys_id === c.previewFile.sys_id; });
+        return found ? list : [c.previewFile];
+    };
+    c.previewStep = function (dir) {
+        var list = c.previewImages();
+        if (list.length < 2) return;
+        var idx = 0;
+        for (var i = 0; i < list.length; i++) if (list[i].sys_id === c.previewFile.sys_id) idx = i;
+        c.previewFile = list[(idx + dir + list.length) % list.length];
+    };
+
+    /* ===================================================
+       FILE TYPE ICONS
+    =================================================== */
+
+    var _iconMap = {
+        png: 'fa fa-file-image-o', jpg: 'fa fa-file-image-o', jpeg: 'fa fa-file-image-o',
+        gif: 'fa fa-file-image-o', webp: 'fa fa-file-image-o', bmp: 'fa fa-file-image-o', svg: 'fa fa-file-image-o',
+        pdf: 'fa fa-file-pdf-o',
+        doc: 'fa fa-file-word-o', docx: 'fa fa-file-word-o', odt: 'fa fa-file-word-o',
+        xls: 'fa fa-file-excel-o', xlsx: 'fa fa-file-excel-o', csv: 'fa fa-file-excel-o',
+        ppt: 'fa fa-file-powerpoint-o', pptx: 'fa fa-file-powerpoint-o',
+        zip: 'fa fa-file-zip-o', rar: 'fa fa-file-zip-o', '7z': 'fa fa-file-zip-o', tar: 'fa fa-file-zip-o', gz: 'fa fa-file-zip-o',
+        mp3: 'fa fa-file-audio-o', wav: 'fa fa-file-audio-o',
+        mp4: 'fa fa-file-video-o', avi: 'fa fa-file-video-o', mov: 'fa fa-file-video-o',
+        js: 'fa fa-file-code-o', html: 'fa fa-file-code-o', css: 'fa fa-file-code-o', json: 'fa fa-file-code-o', py: 'fa fa-file-code-o',
+        txt: 'fa fa-file-text-o', md: 'fa fa-file-text-o'
+    };
+    var _colorMap = {
+        'fa fa-file-image-o': 'fm-icon-image', 'fa fa-file-pdf-o': 'fm-icon-pdf', 'fa fa-file-word-o': 'fm-icon-word',
+        'fa fa-file-excel-o': 'fm-icon-excel', 'fa fa-file-powerpoint-o': 'fm-icon-ppt', 'fa fa-file-zip-o': 'fm-icon-zip',
+        'fa fa-file-audio-o': 'fm-icon-audio', 'fa fa-file-video-o': 'fm-icon-video', 'fa fa-file-code-o': 'fm-icon-code',
+        'fa fa-file-text-o': 'fm-icon-text'
+    };
+
+    c.getFileIcon = function (file) {
+        if (!file) return 'fa fa-file-o';
+        return _iconMap[(file.file_extension || '').toLowerCase()] || 'fa fa-file-o';
+    };
+    c.getFileIconColor = function (file) { return _colorMap[c.getFileIcon(file)] || 'fm-icon-default'; };
+
+    /* ===================================================
+       SELECTION HELPERS
+    =================================================== */
+
+    /** Files currently listed on screen (full filtered list of the active view) */
+    c.visibleFiles = function () {
+        var v = c.view === 'home' ? c.homeSubView : c.view;
+        if (v === 'allfiles') return c.allFilesFiltered();
+        if (v === 'files')    return c.filesInCurrentFolder().filter(c.searchFiles);
+        if (v === 'shared' && c.sharedView === 'withMe') return c.sharedRootFiles().filter(c.searchFiles);
+        return [];
+    };
+
+    c.selectedCount = function () {
+        return c.visibleFiles().filter(function (f) { return f._selected; }).length;
+    };
+
+    c.toggleSelectAll = function () {
+        c.visibleFiles().forEach(function (f) { f._selected = c.allSelected; });
+    };
+    c.selectAllVisible = function () {
+        c.allSelected = true;
+        c.toggleSelectAll();
+    };
+
+    c.onFileSelect = function () {
+        var list = c.visibleFiles();
+        c.allSelected = list.length > 0 && list.every(function (f) { return f._selected; });
+    };
+
+    c.clearSelection = function () { _clearSelection(); };
+
+    /* ===================================================
+       STORAGE VIEW HELPER
+    =================================================== */
+    c.storagePct = function (row) {
+        var total = (c.data && c.data.storage && c.data.storage.totalBytes) || 0;
+        if (!total) return 0;
+        return Math.round((row.totalBytes / total) * 100);
+    };
+
+    /* ===================================================
+       CONTEXT MENU
+    =================================================== */
+
+    c.openContextMenu = function (e, item, type) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (c.pickerMode) return;
+
+        var x = e.clientX || 0, y = e.clientY || 0;
+        var menuWidth = 200, menuHeight = 260;
+        if (x + menuWidth  > window.innerWidth)  x = window.innerWidth  - menuWidth  - 10;
+        if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 10;
+
+        c.contextMenu = { show: true, x: x, y: y, item: item, type: type };
+    };
+
+    c.closeContextMenu = function () {
+        if (c.contextMenu.show) { c.contextMenu.show = false; c.contextMenu.item = null; }
+    };
+
+    /** Three-dot button: opens the same menu anchored to the button */
+    c.openMenuFromButton = function ($event, item, type) {
+        $event.preventDefault();
+        $event.stopPropagation();
+        if (c.pickerMode || !item) return;
+
+        if (c.contextMenu.show && c.contextMenu.item === item) { c.closeContextMenu(); return; }
+
+        var rect = ($event.currentTarget || $event.target).getBoundingClientRect();
+        var menuWidth = 200, menuHeight = 260;
+
+        var x = rect.right - menuWidth;
+        var y = rect.bottom + 4;
+        if (x < 10) x = 10;
+        if (y + menuHeight > window.innerHeight) y = rect.top - menuHeight - 4;
+        if (y < 10) y = 10;
+
+        c.contextMenu = { show: true, x: x, y: y, item: item, type: type };
+    };
+
+    /* ===================================================
+       FORMAT BYTES
+    =================================================== */
+
+    c.formatBytes = function (bytes) {
+        bytes = parseInt(bytes, 10) || 0;
+        if (bytes === 0)        return '0 B';
+        if (bytes < 1024)       return bytes + ' B';
+        if (bytes < 1048576)    return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + ' MB';
+        return (bytes / 1073741824).toFixed(2) + ' GB';
+    };
+
+    /* ===================================================
+       KEYBOARD (document-level listener is attached in api.link)
+         /        focus search
+         Ctrl+A   select all files in the current list
+         Delete   move selected files to the bin
+         ← / →    previous / next image in the preview
+         Esc      close the top-most dialog / menu / search
+    =================================================== */
+
+    c.anyModalOpen = function () {
+        return !!(c.showFolderModal || c.showShareModal || c.showEditFileModal || c.showRenameFileModal ||
+                  c.showUploadFolderPicker || c.showAddToFolderModal || c.confirmModal.show || c.previewFile);
+    };
+
+    c.onKeyDown = function (e) {
+        var key = e.key || '';
+        var tag = ((e.target && e.target.tagName) || '').toLowerCase();
+        var typing = tag === 'input' || tag === 'textarea' || tag === 'select';
+
+        if (key === 'Escape' || e.keyCode === 27) {
+            if (c.contextMenu.show)        { c.closeContextMenu();             return; }
+            if (c.previewFile)             { c.closePreview();                 return; }
+            if (c.confirmModal.show)       { c.confirmModal.show = false;      return; }
+            if (c.showAddToFolderModal)    { c.closeAddToFolder();             return; }
+            if (c.showRenameFileModal)     { c.showRenameFileModal = false;    return; }
+            if (c.showEditFileModal)       { c.showEditFileModal = false;      return; }
+            if (c.showShareModal)          { c.showShareModal = false;         return; }
+            if (c.showFolderModal)         { c.closeFolderModal();             return; }
+            if (c.showUploadFolderPicker)  { c.showUploadFolderPicker = false; return; }
+            if (typing && e.target.id === 'fmSearch') { c.searchText = ''; e.target.blur(); return; }
+            if (c.selectedCount() > 0)     { c.clearSelection();               return; }
+            return;
+        }
+
+        if (c.previewFile) {
+            if (key === 'ArrowLeft')  { c.previewStep(-1); e.preventDefault(); }
+            if (key === 'ArrowRight') { c.previewStep(1);  e.preventDefault(); }
+            return;
+        }
+
+        if (typing || c.anyModalOpen()) return;
+
+        if (key === '/' || ((e.ctrlKey || e.metaKey) && (key === 'k' || key === 'K'))) {
+            var s = document.getElementById('fmSearch');
+            if (s) { s.focus(); e.preventDefault(); }
+        } else if ((e.ctrlKey || e.metaKey) && (key === 'a' || key === 'A')) {
+            if (c.visibleFiles().length) { c.selectAllVisible(); e.preventDefault(); }
+        } else if (key === 'Delete' && !c.pickerMode) {
+            if (c.selectedCount() > 0 && c.canDeleteSelected()) { c.confirmDeleteSelected(); e.preventDefault(); }
+        }
+    };
+
+    /* ===================================================
+       PRIVATE HELPERS
+    =================================================== */
+
+    function _clearAlerts() { c.message = ''; c.error = ''; c.undo = null; }
+
+    function _clearSelection() {
+        c.allSelected = false;
+        ((c.data && c.data.files) || []).forEach(function (f) { f._selected = false; });
+        ((c.data && c.data.sharedFiles) || []).forEach(function (f) { f._selected = false; });
+    }
+
+    /* ===================================================
+       BROWSER BACK / FORWARD
+    =================================================== */
+
+    function _navKey(s) { return (s.view || '') + '|' + (s.homeSubView || '') + '|' + (s.currentFolder || ''); }
+
+    function _navSnapshot() {
+        return {
+            view: c.view, homeSubView: c.homeSubView,
+            currentFolder: c.currentFolder, currentFolderName: c.currentFolderName,
+            breadcrumb: angular.copy(c.breadcrumb)
+        };
+    }
+
+    var _lastNavKey = _navKey(_navSnapshot());
+
+    function _applyNavSnapshot(s) {
+        _lastNavKey         = _navKey(s);
+        c.view              = s.view || 'home';
+        c.homeSubView       = s.homeSubView || '';
+        c.currentFolder     = s.currentFolder || '';
+        c.currentFolderName = s.currentFolderName || '';
+        c.breadcrumb        = angular.copy(s.breadcrumb || []);
+        c.searchText        = '';
+        _clearAlerts();
+        _clearSelection();
+        c.closeContextMenu();
+        c.previewFile = null;
+    }
+
+    if (!c.pickerMode && window.history && history.pushState) {
         try {
-            var gr = new GlideRecord(table);
-            if (gr.get(sysId)) return gr;
-        } catch (e) { /* ignore */ }
-        return null;
+            var _base = angular.extend({}, history.state || {}, { fmNav: _navSnapshot() });
+            history.replaceState(_base, document.title, window.location.href);
+        } catch (e) {}
+
+        $scope.$watch(function () { return _navKey(c); }, function (key) {
+            if (key === _lastNavKey) return;
+            _lastNavKey = key;
+            try {
+                var st = angular.extend({}, history.state || {}, { fmNav: _navSnapshot() });
+                history.pushState(st, document.title, window.location.href);
+            } catch (e) {}
+        });
+
+        var _onPopState = function (ev) {
+            var st = ev && ev.state;
+            if (st && st.fmNav) $scope.$evalAsync(function () { _applyNavSnapshot(st.fmNav); });
+        };
+        window.addEventListener('popstate', _onPopState);
+        $scope.$on('$destroy', function () { window.removeEventListener('popstate', _onPopState); });
+    }
+};
+
+/* =====================================================
+   LINK FUNCTION
+   1. File inputs (no more inline onchange / .scope() calls)
+   2. Right-click context menu (items are looked up by id)
+   3. Drag & drop: upload zone + drop onto folder cards
+   4. Document-level keyboard shortcuts
+   5. Close context menu on scroll / resize
+===================================================== */
+api.link = function ($scope, element) {
+    var rootEl = element[0];
+
+    function safeApply(fn) {
+        if ($scope.$$phase || ($scope.$root && $scope.$root.$$phase)) { if (fn) fn(); }
+        else $scope.$apply(fn);
     }
 
-    function isDeleted(gr) {
-        var v = String(gr.getValue('is_deleted'));
-        return v === '1' || v === 'true';
-    }
-	function isPublic(gr) {
-    if (!gr.isValidField('public')) return false;
-    var v = String(gr.getValue('is_public'));
-    return v === '1' || v === 'true';
-}
+    /* 1. File inputs */
+    rootEl.addEventListener('change', function (e) {
+        var t = e.target;
+        var kind = t && t.getAttribute && t.getAttribute('data-fm-input');
+        if (!kind) return;
 
-    /** Set a field only when the table actually has it (avoids errors on optional columns) */
-    function _setIf(gr, field, value) {
-        if (gr.isValidField(field)) gr.setValue(field, value);
-    }
+        var files = Array.prototype.slice.call(t.files || []);   // copy BEFORE clearing the input
+        t.value = '';
+        if (!files.length) return;
 
-    /** sys_ids of all groups the current user belongs to (cached) */
-    function getMyGroupIds() {
-        if (_myGroupIds) return _myGroupIds;
-        var ids = [];
-        var gm = new GlideRecord('sys_user_grmember');
-        gm.addQuery('user', userId);
-        gm.query();
-        while (gm.next()) ids.push(String(gm.getValue('group')));
-        _myGroupIds = ids;
-        return ids;
-    }
+        safeApply(function () {
+            var c = $scope.c;
+            if (kind === 'folder')      c.onFolderUploadSelected(files);
+            else if (kind === 'direct') c.onDirectFilesSelected(files);
+            else if (kind === 'picker') c.onPickerFilesSelected(files);
+        });
+    });
 
-    function isActiveShare(share) {
-        var activeVal = String(share.getValue('active'));
-        if (activeVal !== '1' && activeVal !== 'true') return false;
+    /* 2. Right-click */
+    rootEl.addEventListener('contextmenu', function (ev) {
+        var target = ev.target.closest('[fm-context-id]');
+        if (!target) return;
+        ev.preventDefault();
 
-        var expiry = share.getValue('expiration_date');
-        if (expiry) {
-            var expiryDate = new GlideDateTime(expiry);
-            var now = new GlideDateTime();
-            if (expiryDate.getNumericValue() < now.getNumericValue()) return false;
-        }
-        return true;
-    }
+        var type = target.getAttribute('fm-context-type');
+        var id   = target.getAttribute('fm-context-id');
+        safeApply(function () {
+            var item = $scope.c.findItem(type, id);
+            if (item) $scope.c.openContextMenu(ev, item, type);
+        });
+    });
 
-    /** Share applies to the user only via direct user / group membership */
-    function isShareForUser(share) {
-        if (!isActiveShare(share)) return false;
-
-        var users = (share.getValue('shared_with_user') || '').split(',');
-        if (users.indexOf(userId) > -1) return true;
-
-        var groups = (share.getValue('shared_with_group') || '').split(',');
-        var mine = getMyGroupIds();
-        for (var i = 0; i < groups.length; i++) {
-            if (groups[i] && mine.indexOf(groups[i]) > -1) return true;
-        }
+    /* 3. Drag & drop */
+    function hasFiles(e) {
+        var types = e.dataTransfer && e.dataTransfer.types;
+        if (!types) return false;
+        for (var i = 0; i < types.length; i++) if (types[i] === 'Files') return true;
         return false;
     }
+    function prevent(e) { e.preventDefault(); e.stopPropagation(); }
+    function dropFolderOf(e) {
+        var el = e.target.closest && e.target.closest('[fm-drop-folder]');
+        return (el && el.getAttribute('fm-drop-folder')) ? el : null;
+    }
 
-    /** Best share permission ('Viewer'|'Editor'|'') for the current user on one file/folder */
-    function getDirectShare(tableField, itemId) {
-        var share = new GlideRecord(SHARE_TABLE);
-        share.addQuery(tableField, itemId);
-        share.addQuery('active', true);
-
-        var qc = share.addQuery('shared_with_user', 'CONTAINS', userId);
-        var mine = getMyGroupIds();
-        for (var i = 0; i < mine.length; i++) {
-            qc.addOrCondition('shared_with_group', 'CONTAINS', mine[i]);
+    rootEl.addEventListener('dragover', function (e) {
+        if (!hasFiles(e)) return;
+        var zone = e.target.closest('[fm-drop-zone]');
+        var card = dropFolderOf(e);
+        e.preventDefault();                                // also stops the browser opening the file
+        if (zone || card) {
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'copy';
+            if (zone) safeApply(function () { $scope.c.dragOver = true; });
+            if (card) card.classList.add('fm-drag-over');
         }
-        share.query();
+    });
 
-        var best = '';
-        while (share.next()) {
-            if (isShareForUser(share)) {
-                var perm = share.getValue('permission') || 'Viewer';
-                if (perm === 'Editor') return 'Editor';
-                best = perm;
+    rootEl.addEventListener('dragleave', function (e) {
+        var zone = e.target.closest('[fm-drop-zone]');
+        if (zone && !zone.contains(e.relatedTarget)) safeApply(function () { $scope.c.dragOver = false; });
+        var card = dropFolderOf(e);
+        if (card && !card.contains(e.relatedTarget)) card.classList.remove('fm-drag-over');
+    });
+
+    rootEl.addEventListener('drop', function (e) {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+
+        var zone  = e.target.closest('[fm-drop-zone]');
+        var card  = dropFolderOf(e);
+        var files = e.dataTransfer && e.dataTransfer.files;
+
+        if (card) {
+            prevent(e);
+            card.classList.remove('fm-drag-over');
+            var folderId = card.getAttribute('fm-drop-folder');
+            if (files && files.length) safeApply(function () { $scope.c.uploadToFolder(files, folderId); });
+        } else if (zone) {
+            prevent(e);
+            safeApply(function () { $scope.c.dragOver = false; });
+            if (files && files.length && $scope.c.currentFolder && $scope.c.currentFolderCanEdit()) {
+                safeApply(function () { $scope.c.onDirectFilesSelected(files); });
             }
         }
-        return best;
-    }
+    });
 
-    /** Folder permission is inherited from parent folders (so subfolders of a shared folder work) */
-    function getFolderPermission(folderId, depth) {
-        depth = depth || 0;
-        if (!folderId || depth > 20) return '';
+    /* 4. Keyboard shortcuts */
+    function onDocKey(e) { if ($scope.c) safeApply(function () { $scope.c.onKeyDown(e); }); }
+    document.addEventListener('keydown', onDocKey);
 
-        var folder = getRecord(FOLDER_TABLE, folderId);
-        if (!folder || isDeleted(folder)) return '';
-        if (folder.getValue('owner') === userId) return 'Owner';
-
-        var direct = getDirectShare('folder', folderId);
-        if (direct) return direct;
-
-        var parentId = folder.getValue('parent_folder');
-        if (parentId) {
-            var inherited = getFolderPermission(parentId, depth + 1);
-            return inherited === 'Owner' ? 'Editor' : inherited;
-        }
-        return '';
-    }
-
-    function getFilePermission(file) {
-        if (!file || isDeleted(file)) return '';
-        if (file.getValue('owner') === userId) return 'Owner';
-
-        var direct = getDirectShare('file', file.getUniqueValue());
-        if (direct) return direct;
-
-        var folderId = file.getValue('folder');
-        if (folderId) {
-            var fp = getFolderPermission(folderId);
-            return fp === 'Owner' ? 'Editor' : fp;
-        }
-        return '';
-    }
-
-    function canEdit(permission)  { return permission === 'Owner' || permission === 'Editor'; }
-    function canOwnFile(file)     { return !!file && file.getValue('owner') === userId; }
-    function canOwnFolder(folder) { return !!folder && folder.getValue('owner') === userId; }
-
-    /** Latest attachment id of one file record */
-    function getAttachmentId(fileId) {
-        var att = new GlideRecord('sys_attachment');
-        att.addQuery('table_name', FILE_TABLE);
-        att.addQuery('table_sys_id', fileId);
-        att.orderByDesc('sys_created_on');
-        att.setLimit(1);
-        att.query();
-        if (att.next()) return att.getUniqueValue();
-        return '';
-    }
-
-    /**
-     * PERFORMANCE: one query for all attachments instead of one query per file.
-     * Takes several file lists, fills attachment_id on every item.
-     */
-    function fillAttachmentIds(lists) {
-        var ids = [], seen = {}, map = {}, i, j;
-        for (i = 0; i < lists.length; i++) {
-            for (j = 0; j < lists[i].length; j++) {
-                var id = lists[i][j].sys_id;
-                if (!seen[id]) { seen[id] = true; ids.push(id); }
-            }
-        }
-        if (ids.length) {
-            var att = new GlideRecord('sys_attachment');
-            att.addQuery('table_name', FILE_TABLE);
-            att.addQuery('table_sys_id', 'IN', ids.join(','));
-            att.orderBy('sys_created_on');            // oldest first -> newest overwrites
-            att.query();
-            while (att.next()) map[att.getValue('table_sys_id')] = att.getUniqueValue();
-        }
-        for (i = 0; i < lists.length; i++) {
-            for (j = 0; j < lists[i].length; j++) lists[i][j].attachment_id = map[lists[i][j].sys_id] || '';
+    /* 5. Close menu on scroll / resize */
+    function closeMenuOnScroll() {
+        if ($scope.c && $scope.c.contextMenu && $scope.c.contextMenu.show) {
+            safeApply(function () { $scope.c.closeContextMenu(); });
         }
     }
-
-    /** Push a file into a list. Returns the pushed object (or null if no permission) */
-    function addFileToList(file, target, isShareRoot) {
-        var permission = getFilePermission(file);
-        if (!permission) return null;
-
-        var fn = file.getValue('filename') || file.getValue('file_name') ||
-                 file.getValue('name') || file.getDisplayValue() || '';
-
-        var obj = {
-            sys_id:         file.getUniqueValue(),
-            filename:       fn,
-            folder:         file.getValue('folder') || '',
-            folder_name:    file.getDisplayValue('folder') || '',
-            description:    file.getValue('description') || '',
-            owner:          file.getValue('owner') || '',
-            file_extension: file.getValue('file_extension') || '',
-            file_size:      parseInt(file.getValue('file_size'), 10) || 0,
-            content_type:   file.getValue('content_type') || '',
-            attachment_id:  '',                       // filled in one batch by fillAttachmentIds()
-            permission:     permission,
-            can_edit:       canEdit(permission),
-            share_root:     !!isShareRoot,
-            sys_created_on: file.getValue('sys_created_on') || '',
-            created_date:   file.getDisplayValue('sys_created_on') || ''
-        };
-        target.push(obj);
-        return obj;
-    }
-
-    function addFolderToList(folder, target, isShareRoot) {
-        var permission = getFolderPermission(folder.getUniqueValue());
-        if (!permission) return null;
-
-        var fn = folder.getValue('folder_name') || folder.getValue('name') || folder.getDisplayValue() || '';
-
-        var color = '';
-        if (folder.isValidField('color')) color = folder.getValue('color') || '';
-        if (!color && folder.isValidField('folder_color')) color = folder.getValue('folder_color') || '';
-        var rawDesc = folder.getValue('description') || '';
-        if (!color) {
-            var m = rawDesc.match(/\[color:([a-z0-9#-]+)\]/i);
-            if (m) color = m[1];
-        }
-        color = color || 'orange';
-        var cleanDesc = rawDesc.replace(/\[color:[a-z0-9#-]+\]\s*/ig, '').trim();
-
-        var obj = {
-            sys_id:         folder.getUniqueValue(),
-            folder_name:    fn,
-            parent_folder:  folder.getValue('parent_folder') || '',
-            description:    cleanDesc,
-            color:          color,
-            owner:          folder.getValue('owner') || '',
-            sys_created_on: folder.getValue('sys_created_on') || '',
-            created_date:   folder.getDisplayValue('sys_created_on') || '',
-            permission:     permission,
-            can_edit:       canEdit(permission),
-            share_root:     !!isShareRoot
-        };
-        target.push(obj);
-        return obj;
-    }
-
-    function _deleteShares(field, itemId) {
-        var sh = new GlideRecord(SHARE_TABLE);
-        sh.addQuery(field, itemId);
-        sh.query();
-        sh.deleteMultiple();
-    }
-
-    function _deleteAttachments(fileId) {
-        var att = new GlideRecord('sys_attachment');
-        att.addQuery('table_name', FILE_TABLE);
-        att.addQuery('table_sys_id', fileId);
-        att.query();
-        att.deleteMultiple();
-    }
-
-    /* Helper: check if a folder exists by name and parent for current user */
-    function _findFolderId(folderName, parentFolder, excludeId) {
-        if (!folderName) return '';
-        var gr = new GlideRecord(FOLDER_TABLE);
-        gr.addQuery('owner', userId);
-        gr.addQuery('is_deleted', false);
-
-        var nameCond = gr.addQuery('folder_name', folderName);
-        nameCond.addOrCondition('name', folderName);
-
-        if (parentFolder) {
-            gr.addQuery('parent_folder', parentFolder);
-        } else {
-            gr.addNullQuery('parent_folder');
-        }
-
-        if (excludeId) {
-            gr.addQuery('sys_id', '!=', excludeId);
-        }
-
-        gr.setLimit(1);
-        gr.query();
-        if (gr.next()) {
-            return gr.getUniqueValue();
-        }
-        return '';
-    }
-
-    /* Helper: merge two comma-separated lists of IDs into unique list */
-    function _mergeLists(existingList, newList) {
-        var map = {};
-        var out = [];
-        var list1 = String(existingList || '').split(',');
-        var list2 = String(newList || '').split(',');
-
-        function add(items) {
-            for (var i = 0; i < items.length; i++) {
-                var item = String(items[i] || '').trim();
-                if (item && !map[item]) {
-                    map[item] = true;
-                    out.push(item);
-                }
-            }
-        }
-        add(list1);
-        add(list2);
-        return out.join(',');
-    }
-
-    /* ==================================================
-       ATTACH FILE(S) TO A TARGET RECORD (picker mode)
-    ================================================== */
-
-    function attachToRecord() {
-        data.attached_count = 0;
-
-        var ids         = input.file_ids || [];
-        var targetTable = (input.target_table || '').trim();
-        var targetId    = (input.target_sys_id || '').trim();
-
-        if (!ids.length || !targetTable || !targetId) {
-            data.error = 'Missing file or target record details.';
-            return;
-        }
-
-        var secure = new GlideRecordSecure(targetTable);
-        if (!secure.isValid()) { data.error = 'Invalid target table.'; return; }
-        if (!secure.get(targetId)) { data.error = 'Target record not found. Save the record first.'; return; }
-        if (!secure.canWrite()) { data.error = 'You do not have permission to attach files to this record.'; return; }
-
-        var target = new GlideRecord(targetTable);
-        target.get(targetId);
-
-        var gsa    = new GlideSysAttachment();
-        var failed = [];
-
-        for (var i = 0; i < ids.length; i++) {
-            var file = getRecord(FILE_TABLE, ids[i]);
-
-            if (!file || isDeleted(file) || !getFilePermission(file)) {
-                failed.push('a file you cannot access');
-                continue;
-            }
-
-            var attId = getAttachmentId(file.getUniqueValue());
-            if (!attId) { failed.push(file.getValue('filename') || 'a file'); continue; }
-
-            var att = new GlideRecord('sys_attachment');
-            if (!att.get(attId)) { failed.push(file.getValue('filename') || 'a file'); continue; }
-
-            var newId = gsa.writeContentStream(
-                target, att.getValue('file_name'), att.getValue('content_type'), gsa.getContentStream(attId)
-            );
-
-            if (newId) data.attached_count++;
-            else failed.push(att.getValue('file_name'));
-        }
-
-        if (failed.length) data.error = 'Could not attach: ' + failed.join(', ');
-        else data.success = data.attached_count + ' file(s) attached.';
-    }
-
-    /* ==================================================
-       SEARCH USERS & GROUPS
-    ================================================== */
-
-    function searchUsers() {
-        data.users = [];
-        var term = (input.search_term || '').trim();
-        if (term.length < 2) return;
-
-        var users = new GlideRecord('sys_user');
-        users.addQuery('active', true);
-        users.addQuery('sys_id', '!=', userId);
-
-        var cond = users.addQuery('name', 'CONTAINS', term);
-        cond.addOrCondition('user_name', 'CONTAINS', term);
-        cond.addOrCondition('email', 'CONTAINS', term);
-
-        users.orderBy('name');
-        users.setLimit(50);
-        users.query();
-
-        while (users.next()) {
-            data.users.push({
-                sys_id:    users.getUniqueValue(),
-                name:      users.getValue('name') || '',
-                user_name: users.getValue('user_name') || '',
-                email:     users.getValue('email') || ''
-            });
-        }
-    }
-
-    function searchGroups() {
-        data.groups = [];
-        var term = (input.search_term || '').trim();
-        if (term.length < 2) return;
-
-        var groups = new GlideRecord('sys_user_group');
-        groups.addQuery('active', true);
-        groups.addQuery('name', 'CONTAINS', term);
-        groups.orderBy('name');
-        groups.setLimit(50);
-        groups.query();
-
-        while (groups.next()) {
-            data.groups.push({
-                sys_id:      groups.getUniqueValue(),
-                name:        groups.getValue('name') || '',
-                description: groups.getValue('description') || ''
-            });
-        }
-    }
-
-    /* ==================================================
-       FOLDERS
-    ================================================== */
-
-    function createFolder() {
-        var folderName   = (input.folder_name || '').trim();
-        var parentFolder = (input.parent_folder || '').trim();
-        var description  = (input.description || '').trim();
-
-        if (!folderName) { data.error = 'Please enter a folder name.'; return; }
-        if (folderName.length > 40) { data.error = 'Folder name cannot exceed 40 characters.'; return; }
-
-        if (parentFolder) {
-            var parent = getRecord(FOLDER_TABLE, parentFolder);
-            if (!parent || isDeleted(parent)) { data.error = 'Parent folder not found.'; return; }
-            if (!canEdit(getFolderPermission(parent.getUniqueValue()))) {
-                data.error = 'You do not have permission to create a subfolder here.';
-                return;
-            }
-        }
-
-        var existingId = _findFolderId(folderName, parentFolder, null);
-        if (existingId) {
-            /* Folder upload re-uses an existing folder with the same name */
-            if (input.reuse_existing) {
-                data.folder_sys_id = existingId;
-                data.success = 'Using existing folder "' + folderName + '".';
-                return;
-            }
-            data.error = 'A folder with this name already exists in this location.';
-            return;
-        }
-
-        var folder = new GlideRecord(FOLDER_TABLE);
-        folder.initialize();
-        if (folder.isValidField('folder_name')) folder.setValue('folder_name', folderName);
-        else if (folder.isValidField('name'))   folder.setValue('name', folderName);
-        else                                     folder.setValue('folder_name', folderName);
-
-        var color = (input.color || 'orange').trim().toLowerCase();
-        _setIf(folder, 'color', color);
-        _setIf(folder, 'folder_color', color);
-
-        var storedDesc = description;
-        if (!folder.isValidField('color') && !folder.isValidField('folder_color')) {
-            storedDesc = (description ? description + ' ' : '') + '[color:' + color + ']';
-        }
-
-        folder.setValue('owner', userId);
-        folder.setValue('description', storedDesc);
-        folder.setValue('is_deleted', false);
-        _setIf(folder, 'active', true);
-        if (parentFolder) folder.setValue('parent_folder', parentFolder);
-
-        var folderId = folder.insert();
-        if (!folderId) {
-            data.error = 'Unable to create folder. Please check your permissions.';
-            return;
-        }
-
-        data.success = 'Folder "' + folderName + '" created successfully.';
-        data.folder_sys_id = folderId;
-    }
-
-    function renameFolder() {
-        var newName  = (input.folder_name || '').trim();
-        var targetId = (input.sys_id || '').trim();
-
-        if (!newName || !targetId) { data.error = 'Folder ID and new name are required.'; return; }
-        if (newName.length > 40)   { data.error = 'Folder name cannot exceed 40 characters.'; return; }
-
-        var folder = getRecord(FOLDER_TABLE, targetId);
-        if (!folder || isDeleted(folder)) { data.error = 'Folder not found.'; return; }
-        if (!canOwnFolder(folder))        { data.error = 'Only the folder owner can rename this folder.'; return; }
-
-        var parentFolder = folder.getValue('parent_folder') || '';
-        if (_findFolderId(newName, parentFolder, targetId)) {
-            data.error = 'A folder with this name already exists in this location.';
-            return;
-        }
-
-        folder.setValue('folder_name', newName);
-
-        var color = (input.color || '').trim().toLowerCase();
-        if (color) {
-            _setIf(folder, 'color', color);
-            _setIf(folder, 'folder_color', color);
-            if (!folder.isValidField('color') && !folder.isValidField('folder_color')) {
-                var currentDesc = folder.getValue('description') || '';
-                currentDesc = currentDesc.replace(/\[color:[a-z0-9#-]+\]\s*/ig, '').trim();
-                folder.setValue('description', (currentDesc ? currentDesc + ' ' : '') + '[color:' + color + ']');
-            }
-        }
-
-        if (!folder.update()) { data.error = 'Unable to rename folder.'; return; }
-
-        data.success = 'Folder renamed to "' + newName + '".';
-    }
-
-    function deleteFolder() {
-        var folder = getRecord(FOLDER_TABLE, input.sys_id);
-        if (!folder || isDeleted(folder) || !canOwnFolder(folder)) {
-            data.error = 'Only the folder owner can delete this folder.';
-            return;
-        }
-
-        var childFolders = new GlideRecord(FOLDER_TABLE);
-        childFolders.addQuery('parent_folder', folder.getUniqueValue());
-        childFolders.addQuery('is_deleted', false);
-        childFolders.setLimit(1);
-        childFolders.query();
-        if (childFolders.hasNext()) { data.error = 'Please delete or move all subfolders first.'; return; }
-
-        var files = new GlideRecord(FILE_TABLE);
-        files.addQuery('folder', folder.getUniqueValue());
-        files.addQuery('is_deleted', false);
-        files.setLimit(1);
-        files.query();
-        if (files.hasNext()) { data.error = 'Please delete or move all files in this folder first.'; return; }
-
-        folder.setValue('is_deleted', true);
-        _setIf(folder, 'deleted_by', userId);
-        _setIf(folder, 'deleted_date', new GlideDateTime());
-        _setIf(folder, 'active', false);
-        folder.update();
-
-        data.success = 'Folder moved to Recycle Bin.';
-    }
-
-    function restoreFolder() {
-        var folder = getRecord(FOLDER_TABLE, input.sys_id);
-        if (!folder || !canOwnFolder(folder) || !isDeleted(folder)) {
-            data.error = 'You cannot restore this folder.';
-            return;
-        }
-
-        var parentId = folder.getValue('parent_folder');
-        if (parentId) {
-            var parent = getRecord(FOLDER_TABLE, parentId);
-            if (!parent || isDeleted(parent)) { data.error = 'Please restore the parent folder first.'; return; }
-        }
-
-        if (_findFolderId(folder.getValue('folder_name'), parentId || '', folder.getUniqueValue())) {
-            data.error = 'A folder with this name already exists in that location.';
-            return;
-        }
-
-        folder.setValue('is_deleted', false);
-        _setIf(folder, 'deleted_by', '');
-        _setIf(folder, 'deleted_date', '');
-        _setIf(folder, 'active', true);
-        folder.update();
-
-        data.success = 'Folder restored successfully.';
-    }
-
-    function deleteFolderPermanent() {
-        var folder = getRecord(FOLDER_TABLE, input.sys_id);
-        if (!folder || !canOwnFolder(folder) || !isDeleted(folder)) {
-            data.error = 'You cannot permanently delete this folder.';
-            return;
-        }
-
-        var folderId = folder.getUniqueValue();
-
-        var childFolders = new GlideRecord(FOLDER_TABLE);
-        childFolders.addQuery('parent_folder', folderId);
-        childFolders.setLimit(1);
-        childFolders.query();
-        if (childFolders.hasNext()) {
-            data.error = 'Cannot delete this folder because subfolders still exist (check the Recycle Bin and delete them first).';
-            return;
-        }
-
-        var files = new GlideRecord(FILE_TABLE);
-        files.addQuery('folder', folderId);
-        files.setLimit(1);
-        files.query();
-        if (files.hasNext()) {
-            data.error = 'Cannot delete this folder because files still exist (check the Recycle Bin and delete them first).';
-            return;
-        }
-
-        _deleteShares('folder', folderId);
-        folder.deleteRecord();
-        data.success = 'Folder permanently deleted.';
-    }
-
-    /* ==================================================
-       FILES
-    ================================================== */
-
-    function createFile() {
-        var filename = (input.filename || '').trim();
-        var folderId = (input.folder || '').trim();
-
-        if (!filename || !folderId) { data.error = 'File name and destination folder are required.'; return; }
-        if (filename.length > 255)  { data.error = 'File name is too long (max 255 characters).'; return; }
-
-        var folder = getRecord(FOLDER_TABLE, folderId);
-        if (!folder || isDeleted(folder)) { data.error = 'Destination folder not found.'; return; }
-        if (!canEdit(getFolderPermission(folder.getUniqueValue()))) {
-            data.error = 'You do not have permission to upload into this folder.';
-            return;
-        }
-
-        var file = new GlideRecord(FILE_TABLE);
-        file.initialize();
-        if (file.isValidField('filename'))        file.setValue('filename', filename);
-        else if (file.isValidField('file_name'))  file.setValue('file_name', filename);
-        else if (file.isValidField('name'))       file.setValue('name', filename);
-        else                                      file.setValue('filename', filename);
-
-        file.setValue('folder', folderId);
-        file.setValue('owner', userId);
-        file.setValue('file_extension', (input.extension || '').toLowerCase());
-        file.setValue('file_size', parseInt(input.file_size, 10) || 0);
-        file.setValue('content_type', input.content_type || 'application/octet-stream');
-        file.setValue('is_deleted', false);
-        _setIf(file, 'current_version', 1);
-
-        var fileId = file.insert();
-        if (!fileId) { data.error = 'Unable to create file record. Please check your permissions.'; return; }
-
-        data.file_sys_id = fileId;
-        data.success = 'File record created.';
-    }
-
-    /** Remove a file record whose attachment upload failed (prevents empty orphan records) */
-    function discardFile() {
-        var file = getRecord(FILE_TABLE, input.sys_id);
-        if (!file || !canOwnFile(file)) return;
-        if (getAttachmentId(file.getUniqueValue())) return;   // has an attachment — keep it
-        file.deleteRecord();
-    }
-
-    function updateFile() {
-        var file = getRecord(FILE_TABLE, input.sys_id);
-        if (!file || isDeleted(file)) { data.error = 'File not found.'; return; }
-        if (!canEdit(getFilePermission(file))) { data.error = 'You do not have permission to edit this file.'; return; }
-
-        file.setValue('description', (input.description || '').substring(0, 1000));
-        if (!file.update()) { data.error = 'Unable to update file.'; return; }
-
-        data.success = 'File updated successfully.';
-    }
-
-    /** rename a file (owner only). Keeps the extension field and the attachment name in sync. */
-    function renameFile() {
-        var newName = (input.filename || '').trim();
-        var file = getRecord(FILE_TABLE, input.sys_id);
-
-        if (!newName) { data.error = 'Please enter a file name.'; return; }
-        if (newName.length > 255) { data.error = 'File name is too long (max 255 characters).'; return; }
-        if (/[\\\/]/.test(newName)) { data.error = 'File name cannot contain slashes.'; return; }
-        if (!file || isDeleted(file)) { data.error = 'File not found.'; return; }
-        if (!canOwnFile(file)) { data.error = 'Only the file owner can rename this file.'; return; }
-
-        if (file.isValidField('filename'))       file.setValue('filename', newName);
-        else if (file.isValidField('file_name')) file.setValue('file_name', newName);
-        else if (file.isValidField('name'))      file.setValue('name', newName);
-
-        var ext = newName.indexOf('.') !== -1 ? newName.split('.').pop().toLowerCase() : '';
-        _setIf(file, 'file_extension', ext);
-
-        if (!file.update()) { data.error = 'Unable to rename file.'; return; }
-
-        try {   // keep the downloaded file name consistent
-            var attId = getAttachmentId(file.getUniqueValue());
-            if (attId) {
-                var att = new GlideRecord('sys_attachment');
-                if (att.get(attId)) { att.setValue('file_name', newName); att.update(); }
-            }
-        } catch (e) { gs.warn('FileManager rename: attachment name not updated: ' + e.message); }
-
-        data.success = 'File renamed to "' + newName + '".';
-    }
-
-    function deleteFile() {
-        var file = getRecord(FILE_TABLE, input.sys_id);
-        if (!file || isDeleted(file) || !canOwnFile(file)) {
-            data.error = 'Only the file owner can delete this file.';
-            return;
-        }
-
-        _setIf(file, 'original_folder', file.getValue('folder'));
-        file.setValue('is_deleted', true);
-        _setIf(file, 'deleted_by', userId);
-        _setIf(file, 'deleted_date', new GlideDateTime());
-        file.update();
-
-        data.success = 'File moved to Recycle Bin.';
-    }
-
-    function restoreFile() {
-        var file = getRecord(FILE_TABLE, input.sys_id);
-        if (!file || !canOwnFile(file) || !isDeleted(file)) {
-            data.error = 'You cannot restore this file.';
-            return;
-        }
-
-        var originalFolder = file.isValidField('original_folder') ? file.getValue('original_folder') : '';
-        if (originalFolder) {
-            var folder = getRecord(FOLDER_TABLE, originalFolder);
-            if (!folder || isDeleted(folder)) {
-                data.error = 'The original folder no longer exists. Please restore it first.';
-                return;
-            }
-            file.setValue('folder', originalFolder);
-        }
-
-        file.setValue('is_deleted', false);
-        _setIf(file, 'deleted_by', '');
-        _setIf(file, 'deleted_date', '');
-        _setIf(file, 'original_folder', '');
-        file.update();
-
-        data.success = 'File restored successfully.';
-    }
-
-    function deleteFilePermanent() {
-        var file = getRecord(FILE_TABLE, input.sys_id);
-        if (!file || !canOwnFile(file) || !isDeleted(file)) {
-            data.error = 'You cannot permanently delete this file.';
-            return;
-        }
-
-        var fileId = file.getUniqueValue();
-        _deleteAttachments(fileId);
-        _deleteShares('file', fileId);
-        file.deleteRecord();
-        data.success = 'File permanently deleted.';
-    }
-
-    function emptyBin() {
-        var files = new GlideRecord(FILE_TABLE);
-        files.addQuery('owner', userId);
-        files.addQuery('is_deleted', true);
-        files.query();
-        while (files.next()) {
-            var fid = files.getUniqueValue();
-            _deleteAttachments(fid);
-            _deleteShares('file', fid);
-            files.deleteRecord();
-        }
-
-        var folders = new GlideRecord(FOLDER_TABLE);
-        folders.addQuery('owner', userId);
-        folders.addQuery('is_deleted', true);
-        folders.query();
-        while (folders.next()) {
-            _deleteShares('folder', folders.getUniqueValue());
-            folders.deleteRecord();
-        }
-
-        data.success = 'Recycle Bin emptied.';
-    }
-
-    /* ==================================================
-       ADD SHARED FILE OR FOLDER TO MY FOLDER
-       Creates an independent copy. The original is unchanged.
-    ================================================== */
-
-    function addSharedFileToFolder() {
-        var sourceId       = String(input.sys_id || '').trim();
-        var targetFolderId = String(input.folder_id || '').trim();
-        var itemType       = String(input.item_type || input.type || '').toLowerCase();
-
-        if (!sourceId || !targetFolderId) { data.error = 'Source item and destination folder are required.'; return; }
-
-        var targetFolder = getRecord(FOLDER_TABLE, targetFolderId);
-        if (!targetFolder || isDeleted(targetFolder)) { data.error = 'Destination folder not found.'; return; }
-        if (!canOwnFolder(targetFolder)) { data.error = 'You can only add items to folders owned by you.'; return; }
-
-        if (itemType !== 'file' && itemType !== 'folder') {
-            var maybeFolder = getRecord(FOLDER_TABLE, sourceId);
-            itemType = (maybeFolder && !isDeleted(maybeFolder)) ? 'folder' : 'file';
-        }
-
-        if (itemType === 'file') {
-            var sourceFile = getRecord(FILE_TABLE, sourceId);
-            if (!sourceFile || isDeleted(sourceFile)) { data.error = 'Shared file not found.'; return; }
-            if (!getFilePermission(sourceFile)) { data.error = 'You do not have permission to access this file.'; return; }
-
-            var copiedFileId = _copySharedFile(sourceFile, targetFolderId);
-            if (!copiedFileId) { data.error = 'Unable to copy the shared file.'; return; }
-
-            data.success = 'Shared file added to your folder successfully.';
-            data.new_file_sys_id = copiedFileId;
-            return;
-        }
-
-        var sourceFolder = getRecord(FOLDER_TABLE, sourceId);
-        if (!sourceFolder || isDeleted(sourceFolder)) { data.error = 'Shared folder not found.'; return; }
-        if (!getFolderPermission(sourceId)) { data.error = 'You do not have permission to access this folder.'; return; }
-
-        var copiedFolderId = _copySharedFolderTree(sourceFolder, targetFolderId, 0);
-        if (!copiedFolderId) {
-            if (!data.error) data.error = 'Unable to copy the shared folder.';
-            return;
-        }
-
-        data.success = 'Shared folder and its contents added successfully.';
-        data.new_folder_sys_id = copiedFolderId;
-    }
-
-    /** Copy one file record and its attachment */
-    function _copySharedFile(sourceFile, targetFolderId) {
-        if (!sourceFile || isDeleted(sourceFile)) return '';
-        if (!getFilePermission(sourceFile)) return '';
-
-        var newFile = new GlideRecord(FILE_TABLE);
-        newFile.initialize();
-
-        var filename = sourceFile.getValue('filename') || sourceFile.getValue('file_name') || sourceFile.getValue('name') || '';
-
-        if (newFile.isValidField('filename'))       newFile.setValue('filename', filename);
-        else if (newFile.isValidField('file_name')) newFile.setValue('file_name', filename);
-        else if (newFile.isValidField('name'))      newFile.setValue('name', filename);
-
-        newFile.setValue('folder', targetFolderId);
-        newFile.setValue('owner', userId);
-        _setIf(newFile, 'description',     sourceFile.getValue('description') || '');
-        _setIf(newFile, 'file_extension',  sourceFile.getValue('file_extension') || '');
-        _setIf(newFile, 'file_size',       sourceFile.getValue('file_size') || 0);
-        _setIf(newFile, 'content_type',    sourceFile.getValue('content_type') || '');
-        _setIf(newFile, 'current_version', 1);
-        _setIf(newFile, 'is_deleted',      false);
-
-        var newFileId = newFile.insert();
-        if (!newFileId) return '';
-
-        if (getAttachmentId(sourceFile.getUniqueValue())) {
-            try {
-                new GlideSysAttachment().copy(FILE_TABLE, sourceFile.getUniqueValue(), FILE_TABLE, newFileId);
-            } catch (attachmentError) {
-                gs.error('File Manager: Attachment copy failed: ' + attachmentError.message);
-                var incomplete = getRecord(FILE_TABLE, newFileId);
-                if (incomplete) incomplete.deleteRecord();
-                return '';
-            }
-        }
-        return String(newFileId);
-    }
-
-    /** Copy a shared folder recursively (subfolders + files) */
-    function _copySharedFolderTree(sourceFolder, destinationParentId, depth) {
-        depth = depth || 0;
-
-        if (depth > 20) { data.error = 'Maximum folder nesting depth exceeded.'; return ''; }
-        if (!sourceFolder || isDeleted(sourceFolder)) return '';
-
-        if (!getFolderPermission(sourceFolder.getUniqueValue())) {
-            data.error = 'You do not have access to a folder in this structure.';
-            return '';
-        }
-
-        var destinationParent = getRecord(FOLDER_TABLE, destinationParentId);
-        if (!destinationParent || isDeleted(destinationParent) || !canOwnFolder(destinationParent)) {
-            data.error = 'Invalid destination folder.';
-            return '';
-        }
-
-        var folderName = sourceFolder.getValue('folder_name') || sourceFolder.getValue('name') || 'Shared Folder';
-
-        // Avoid duplicate folder names in the destination (folder names are limited to 40 chars)
-        var uniqueName = folderName.substring(0, 40), suffix = 1;
-        while (_findFolderId(uniqueName, destinationParentId, null)) {
-            var tail = ' (Copy ' + suffix + ')';
-            uniqueName = folderName.substring(0, 40 - tail.length) + tail;
-            if (++suffix > 100) { data.error = 'Unable to generate a unique folder name.'; return ''; }
-        }
-
-        var newFolder = new GlideRecord(FOLDER_TABLE);
-        newFolder.initialize();
-        if (newFolder.isValidField('folder_name')) newFolder.setValue('folder_name', uniqueName);
-        else if (newFolder.isValidField('name'))   newFolder.setValue('name', uniqueName);
-
-        newFolder.setValue('owner', userId);
-        newFolder.setValue('parent_folder', destinationParentId);
-        _setIf(newFolder, 'description', sourceFolder.getValue('description') || '');
-        _setIf(newFolder, 'is_deleted', false);
-        _setIf(newFolder, 'active', true);
-
-        var newFolderId = newFolder.insert();
-        if (!newFolderId) { data.error = 'Unable to create copied folder: ' + uniqueName; return ''; }
-
-        // files inside
-        var files = new GlideRecord(FILE_TABLE);
-        files.addQuery('folder', sourceFolder.getUniqueValue());
-        files.addQuery('is_deleted', false);
-        files.query();
-        while (files.next()) {
-            if (!_copySharedFile(files, String(newFolderId))) {
-                gs.error('File Manager: Could not copy file ' + files.getUniqueValue());
-            }
-        }
-
-        // child folders (collect ids first so the recursion does not disturb the cursor)
-        var subIds = [];
-        var subfolders = new GlideRecord(FOLDER_TABLE);
-        subfolders.addQuery('parent_folder', sourceFolder.getUniqueValue());
-        subfolders.addQuery('is_deleted', false);
-        subfolders.query();
-        while (subfolders.next()) subIds.push(subfolders.getUniqueValue());
-
-        for (var i = 0; i < subIds.length; i++) {
-            var sub = getRecord(FOLDER_TABLE, subIds[i]);
-            if (sub) _copySharedFolderTree(sub, String(newFolderId), depth + 1);
-        }
-
-        return String(newFolderId);
-    }
-
-    /* ==================================================
-       SHARE / REVOKE
-    ================================================== */
-
-    /** Keep only active records of `table` whose sys_id is in the csv (and drop the owner) */
-    function _validIds(table, csv, excludeId) {
-        var ids = String(csv || '').split(',').filter(function (x) { return x && x !== excludeId; });
-        if (!ids.length) return '';
-        var gr = new GlideRecord(table);
-        gr.addQuery('sys_id', 'IN', ids.join(','));
-        gr.addQuery('active', true);
-        gr.query();
-        var ok = [];
-        while (gr.next()) ok.push(gr.getUniqueValue());
-        return ok.join(',');
-    }
-
-    function shareItem() {
-        var type           = (input.type || '');
-        var itemId         = (input.sys_id || '');
-        var shareRecipient = (input.recipient_type || 'user');
-        var targetUsers    = (input.user_ids || '');
-        var targetGroups   = (input.group_ids || '');
-        var permission     = 'Viewer';   // fixed least-privilege default; not user-selectable
-        var expirationDate = (input.expiration_date || '');
-
-        if (!itemId) { data.error = 'No item specified to share.'; return; }
-
-        var targetField;
-        if (type === 'file') {
-            var item = getRecord(FILE_TABLE, itemId);
-            if (!item || isDeleted(item) || !canOwnFile(item)) { data.error = 'Only the file owner can share this file.'; return; }
-            targetField = 'file';
-        } else if (type === 'folder') {
-            var item2 = getRecord(FOLDER_TABLE, itemId);
-            if (!item2 || isDeleted(item2) || !canOwnFolder(item2)) { data.error = 'Only the folder owner can share this folder.'; return; }
-            targetField = 'folder';
-        } else {
-            data.error = 'Invalid item type.';
-            return;
-        }
-
-        if (shareRecipient === 'group') {
-            targetGroups = _validIds('sys_user_group', targetGroups, '');
-            if (!targetGroups) { data.error = 'Please select at least one valid group.'; return; }
-        } else {
-            targetUsers = _validIds('sys_user', targetUsers, userId);   // you cannot share with yourself
-            if (!targetUsers) { data.error = 'Please select at least one valid user (other than yourself).'; return; }
-        }
-
-        var formattedExpiry = '';
-        if (expirationDate) {
-            formattedExpiry = String(expirationDate).replace('T', ' ').replace(/\.\d+Z?$/, '').replace(/Z$/, '');
-            if (formattedExpiry.length === 16) formattedExpiry += ':00';
-        }
-
-        var existing = new GlideRecord(SHARE_TABLE);
-        existing.addQuery(targetField, itemId);
-        existing.addQuery('permission', permission);
-        existing.addQuery('shared_by', userId);
-        if (formattedExpiry) existing.addQuery('expiration_date', formattedExpiry);
-        else existing.addNullQuery('expiration_date');
-        existing.query();
-
-        if (existing.next()) {
-            existing.setValue('active', true);
-            existing.setValue('shared_by', userId);
-
-            if (shareRecipient === 'group') {
-                existing.setValue('shared_with_group', _mergeLists(existing.getValue('shared_with_group'), targetGroups));
-            } else {
-                existing.setValue('shared_with_user', _mergeLists(existing.getValue('shared_with_user'), targetUsers));
-            }
-            existing.update();
-        } else {
-            var share = new GlideRecord(SHARE_TABLE);
-            share.initialize();
-            share.setValue(targetField, itemId);
-
-            if (shareRecipient === 'group') {
-                share.setValue('shared_with_group', targetGroups);
-                share.setValue('shared_with_user', '');
-            } else {
-                share.setValue('shared_with_user', targetUsers);
-                share.setValue('shared_with_group', '');
-            }
-            share.setValue('shared_by', userId);
-            share.setValue('permission', permission);
-            share.setValue('active', true);
-            if (formattedExpiry) share.setValue('expiration_date', formattedExpiry);
-
-            if (!share.insert()) { data.error = 'Unable to share this item. Please try again.'; return; }
-        }
-
-        data.success = 'Item shared successfully.';
-    }
-
-    /** stop sharing (only the person who created the share can revoke it) */
-    function revokeShare() {
-        var share = getRecord(SHARE_TABLE, input.sys_id);
-        if (!share || share.getValue('shared_by') !== userId) {
-            data.error = 'You can only revoke shares that you created.';
-            return;
-        }
-        share.setValue('active', false);
-        if (!share.update()) { data.error = 'Unable to revoke this share.'; return; }
-        data.success = 'Access revoked.';
-    }
-
-    /* ==================================================
-       LOAD WIDGET DATA
-    ================================================== */
-
-    function loadData() {
-        loadOwnedFolders();
-        loadOwnedFiles();
-        loadSharedItems();
-        loadSharedByMe();
-        loadRecycleBin();
-        loadStorage();
-        fillAttachmentIds([data.files, data.sharedFiles]);   // ONE query for all attachments
-        data.loaded = true;
-    }
-
-    function loadOwnedFolders() {
-        var folders = new GlideRecord(FOLDER_TABLE);
-        folders.addQuery('owner', userId);
-        folders.addQuery('is_deleted', false);
-        folders.orderBy('folder_name');
-        folders.query();
-        while (folders.next()) addFolderToList(folders, data.folders, false);
-    }
-
-    function loadOwnedFiles() {
-        var files = new GlideRecord(FILE_TABLE);
-        files.addQuery('owner', userId);
-        files.addQuery('is_deleted', false);
-        files.orderByDesc('sys_created_on');
-        files.query();
-        while (files.next()) addFileToList(files, data.files, false);
-    }
-
-    /**
-     * "Shared with Me": only items shared WITH the user (user or group), never items the
-     * user owns. Shared folders are loaded recursively (subfolders + files).
-     */
-    function loadSharedItems() {
-        var shares = new GlideRecord(SHARE_TABLE);
-        shares.addQuery('active', true);
-
-        var qc = shares.addQuery('shared_with_user', 'CONTAINS', userId);
-        var mine = getMyGroupIds();
-        for (var g = 0; g < mine.length; g++) qc.addOrCondition('shared_with_group', 'CONTAINS', mine[g]);
-        shares.query();
-
-        var seenFiles = {}, seenFolders = {};
-
-        while (shares.next()) {
-            if (!isShareForUser(shares)) continue;
-
-            var fileId   = shares.getValue('file');
-            var folderId = shares.getValue('folder');
-            var sharedOn = shares.getDisplayValue('sys_created_on') || '';
-
-            if (fileId) {
-                if (seenFiles[fileId]) {
-                    seenFiles[fileId].share_root = true;
-                } else {
-                    var file = getRecord(FILE_TABLE, fileId);
-                    if (file && !isDeleted(file) && !canOwnFile(file)) {
-                        var fo = addFileToList(file, data.sharedFiles, true);
-                        if (fo) { fo.shared_date = sharedOn; seenFiles[fileId] = fo; }
-                    }
-                }
-            }
-
-            if (folderId) {
-                var shFolder = getRecord(FOLDER_TABLE, folderId);
-                if (shFolder && !isDeleted(shFolder) && !canOwnFolder(shFolder)) {
-                    _addSharedFolderTree(folderId, true, seenFolders, seenFiles, 0);
-                    if (seenFolders[folderId]) seenFolders[folderId].shared_date = sharedOn;
-                }
-            }
-        }
-    }
-
-    /** Items shared by the current user (recipient, dates, status — and the share id for revoking) */
-    function loadSharedByMe() {
-        var shares = new GlideRecord(SHARE_TABLE);
-        shares.addQuery('shared_by', userId);
-        shares.orderByDesc('sys_created_on');
-        shares.query();
-
-        var nameCache = {};
-        function lookupName(table, id, isGroup) {
-            var key = table + ':' + id;
-            if (nameCache[key] === undefined) {
-                var r = getRecord(table, id);
-                nameCache[key] = r ? (r.getValue('name') || r.getValue('user_name') || id) : id;
-            }
-            return nameCache[key] + (isGroup ? ' (Group)' : '');
-        }
-
-        while (shares.next()) {
-            var fileId   = shares.getValue('file');
-            var folderId = shares.getValue('folder');
-            var item     = fileId ? getRecord(FILE_TABLE, fileId) : getRecord(FOLDER_TABLE, folderId);
-            if (!item || isDeleted(item)) continue;
-
-            var recipients = [];
-            var userIds  = (shares.getValue('shared_with_user') || '').split(',');
-            var groupIds = (shares.getValue('shared_with_group') || '').split(',');
-            for (var i = 0; i < userIds.length; i++)  if (userIds[i])  recipients.push(lookupName('sys_user', userIds[i], false));
-            for (var j = 0; j < groupIds.length; j++) if (groupIds[j]) recipients.push(lookupName('sys_user_group', groupIds[j], true));
-
-            data.sharedByMe.push({
-                sys_id:            shares.getUniqueValue(),
-                item_sys_id:       fileId || folderId || '',
-                item_name:         fileId ? (item.getValue('filename') || item.getDisplayValue()) : (item.getValue('folder_name') || item.getDisplayValue()),
-                item_type:         fileId ? 'File' : 'Folder',
-                item_created_date: item.getDisplayValue('sys_created_on') || '',
-                shared_with:       recipients.join(', '),
-                shared_date:       shares.getDisplayValue('sys_created_on') || '',
-                expiration_date:   shares.getDisplayValue('expiration_date') || '',
-                active:            isActiveShare(shares)
-            });
-        }
-    }
-
-    function _addSharedFolderTree(folderId, isRoot, seenFolders, seenFiles, depth) {
-        if (depth > 20) return;
-
-        if (seenFolders[folderId]) {
-            if (isRoot) seenFolders[folderId].share_root = true;
-            return;
-        }
-
-        var folder = getRecord(FOLDER_TABLE, folderId);
-        if (!folder || isDeleted(folder)) return;
-
-        var obj = addFolderToList(folder, data.sharedFolders, isRoot);
-        if (!obj) return;
-        seenFolders[folderId] = obj;
-
-        /* files inside */
-        var ff = new GlideRecord(FILE_TABLE);
-        ff.addQuery('folder', folderId);
-        ff.addQuery('is_deleted', false);
-        ff.query();
-        while (ff.next()) {
-            var fid = ff.getUniqueValue();
-            if (seenFiles[fid]) continue;
-            var fo = addFileToList(ff, data.sharedFiles, false);
-            if (fo) seenFiles[fid] = fo;
-        }
-
-        /* subfolders */
-        var sub = new GlideRecord(FOLDER_TABLE);
-        sub.addQuery('parent_folder', folderId);
-        sub.addQuery('is_deleted', false);
-        sub.query();
-        var subIds = [];
-        while (sub.next()) subIds.push(sub.getUniqueValue());
-        for (var i = 0; i < subIds.length; i++) {
-            _addSharedFolderTree(subIds[i], false, seenFolders, seenFiles, depth + 1);
-        }
-    }
-
-    /* ---- Recycle Bin ---- */
-    function loadRecycleBin() {
-        var folders = new GlideRecord(FOLDER_TABLE);
-        folders.addQuery('owner', userId);
-        folders.addQuery('is_deleted', true);
-        folders.orderByDesc('sys_updated_on');
-        folders.query();
-        while (folders.next()) {
-            data.recycleFolders.push({
-                sys_id:       folders.getUniqueValue(),
-                folder_name:  folders.getValue('folder_name') || folders.getValue('name') || folders.getDisplayValue() || '',
-                created_date: folders.getDisplayValue('sys_created_on') || '',
-                deleted_date: folders.getDisplayValue('deleted_date') || folders.getDisplayValue('sys_updated_on') || ''
-            });
-        }
-
-        var files = new GlideRecord(FILE_TABLE);
-        files.addQuery('owner', userId);
-        files.addQuery('is_deleted', true);
-        files.orderByDesc('sys_updated_on');
-        files.query();
-        while (files.next()) {
-            var fn = files.getValue('filename') || files.getValue('file_name') || files.getValue('name') || files.getDisplayValue() || '';
-            data.recycleFiles.push({
-                sys_id:         files.getUniqueValue(),
-                filename:       fn,
-                file_size:      parseInt(files.getValue('file_size'), 10) || 0,
-                file_extension: files.getValue('file_extension') || '',
-                content_type:   files.getValue('content_type') || '',
-                created_date:   files.getDisplayValue('sys_created_on') || '',
-                deleted_date:   files.getDisplayValue('deleted_date') || files.getDisplayValue('sys_updated_on') || ''
-            });
-        }
-    }
-
-    /* ---- Storage Analytics ---- */
-    function loadStorage() {
-        var fileCount = 0;
-        var totalBytes = 0;
-        var byTypeMap = {};
-
-        var files = new GlideRecord(FILE_TABLE);
-        files.addQuery('owner', userId);
-        files.addQuery('is_deleted', false);
-        files.query();
-
-        while (files.next()) {
-            var size = parseInt(files.getValue('file_size'), 10) || 0;
-            var ext = (files.getValue('file_extension') || 'unknown').toLowerCase();
-            if (!ext) ext = 'unknown';
-
-            fileCount++;
-            totalBytes += size;
-
-            if (!byTypeMap[ext]) {
-                byTypeMap[ext] = { ext: ext, count: 0, totalBytes: 0 };
-            }
-            byTypeMap[ext].count++;
-            byTypeMap[ext].totalBytes += size;
-        }
-
-        var byTypeList = [];
-        for (var k in byTypeMap) {
-            if (byTypeMap.hasOwnProperty(k)) {
-                byTypeList.push(byTypeMap[k]);
-            }
-        }
-
-        data.storage = {
-            fileCount:  fileCount,
-            totalBytes: totalBytes,
-            byType:     byTypeList
-        };
-    }
-
-})();
-
+    window.addEventListener('scroll', closeMenuOnScroll, true);
+    window.addEventListener('resize', closeMenuOnScroll);
+
+    $scope.$on('$destroy', function () {
+        document.removeEventListener('keydown', onDocKey);
+        window.removeEventListener('scroll', closeMenuOnScroll, true);
+        window.removeEventListener('resize', closeMenuOnScroll);
+    });
+};
 ]]></script>
         <servicenow>false</servicenow>
         <sys_class_name>sp_widget</sys_class_name>
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-04 11:15:08</sys_created_on>
         <sys_id>53595bdec35c5710c05a33bc0501312a</sys_id>
-        <sys_mod_count>111</sys_mod_count>
+        <sys_mod_count>115</sys_mod_count>
         <sys_name>File home</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sp_widget_53595bdec35c5710c05a33bc0501312a</sys_update_name>
-        <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-17 15:02:03</sys_updated_on>
+        <sys_updated_by>Siva</sys_updated_by>
+        <sys_updated_on>2026-11-17 15:22:49</sys_updated_on>
         <template><![CDATA[<div class="fm-app" ng-class="{'fm-picker': c.pickerMode}" ng-click="c.closeContextMenu()">
 
   <!-- ================= SIDEBAR ================= -->
