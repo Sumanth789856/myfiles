@@ -2,11 +2,9 @@
     <element attributes="enforce_dot_walk_cross_scope_access=true" db_object_id="9bb1f07dc3d41310c05a33bc050131df" label="File" max_length="40" name="x_1830514_fm_file" type="collection">
         <element attributes="encode_utf8=false" label="Original Folder" max_length="32" name="original_folder" reference="x_1830514_fm_folder" type="reference"/>
         <element attributes="edge_encryption_enabled=true" label="File Extension" max_length="40" name="file_extension" type="string"/>
-        <element attributes="edge_encryption_enabled=true" default="javascript:gs.nowDateTime()" dynamic_default_value="79cb83a85f220100a9ad2572f2b4773c" label="Public Since" max_length="40" name="public_since" read_only="true" read_only_option="display_read_only" type="glide_date_time" use_dynamic_default="true"/>
         <element label="File Size" max_length="19" name="file_size" type="longint"/>
         <element label="Current Version" max_length="40" name="current_version" type="integer"/>
         <element attributes="edge_encryption_enabled=true" label="Deleted Date" max_length="40" name="deleted_date" type="glide_date_time"/>
-        <element attributes="encode_utf8=false" default="javascript:gs.getUserID()" dynamic_default_value="90d1921e5f510100a9ad2572f2b477fe" label="Public By" max_length="32" name="public_by" read_only="true" read_only_option="display_read_only" reference="sys_user" type="reference" use_dynamic_default="true"/>
         <element attributes="edge_encryption_enabled=true" display="true" label="Filename" max_length="40" name="filename" type="string"/>
         <element label="Is Starred" max_length="40" name="is_starred" type="boolean"/>
         <element attributes="edge_encryption_enabled=true" label="Content Type" max_length="100" name="content_type" type="string"/>
@@ -14,7 +12,6 @@
         <element attributes="encode_utf8=false" label="Folder" max_length="32" name="folder" reference="x_1830514_fm_folder" reference_qual="javascript:'owner=' + gs.getUserID() + '^is_deleted=false'" type="reference" use_reference_qualifier="advanced"/>
         <element attributes="edge_encryption_enabled=true" label="Description" max_length="1000" name="description" type="string"/>
         <element attributes="encode_utf8=false" label="Deleted By" max_length="32" name="deleted_by" reference="sys_user" type="reference"/>
-        <element label="Public" max_length="40" name="public" type="boolean"/>
         <element attributes="encode_utf8=false" default="javascript:gs.getUserID();" dynamic_default_value="90d1921e5f510100a9ad2572f2b477fe" label="Owner" mandatory="true" max_length="32" name="owner" reference="sys_user" type="reference" use_dynamic_default="true"/>
         <index name="index">
             <element name="deleted_by"/>
@@ -27,9 +24,6 @@
         </index>
         <index name="index4">
             <element name="owner"/>
-        </index>
-        <index name="index5">
-            <element name="public_by"/>
         </index>
     </element>
 </database>

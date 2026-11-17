@@ -2450,7 +2450,8 @@ tr:hover .fm-file-icon-box, .fm-file-card:hover .fm-file-card-preview { transfor
 /* Respect reduced-motion preference */
 @media (prefers-reduced-motion: reduce) {
     .fm-app *, .fm-app *::before, .fm-app *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
-}</css>
+}
+</css>
         <data_table>sp_instance</data_table>
         <demo_data/>
         <description/>
@@ -2489,6 +2490,8 @@ tr:hover .fm-file-icon-box, .fm-file-card:hover .fm-file-card-preview { transfor
     data.sharedByMe     = [];
     data.recycleFiles   = [];
     data.recycleFolders = [];
+	  data.publicFiles   = [];
+    data.publicFolders = [];
     data.users          = [];
     data.groups         = [];
     data.storage        = { fileCount: 0, totalBytes: 0, byType: [] };
@@ -2567,6 +2570,11 @@ tr:hover .fm-file-icon-box, .fm-file-card:hover .fm-file-card-preview { transfor
         var v = String(gr.getValue('is_deleted'));
         return v === '1' || v === 'true';
     }
+	function isPublic(gr) {
+    if (!gr.isValidField('public')) return false;
+    var v = String(gr.getValue('is_public'));
+    return v === '1' || v === 'true';
+}
 
     /** Set a field only when the table actually has it (avoids errors on optional columns) */
     function _setIf(gr, field, value) {
@@ -3810,14 +3818,14 @@ tr:hover .fm-file-icon-box, .fm-file-card:hover .fm-file-card-preview { transfor
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-04 11:15:08</sys_created_on>
         <sys_id>53595bdec35c5710c05a33bc0501312a</sys_id>
-        <sys_mod_count>109</sys_mod_count>
+        <sys_mod_count>111</sys_mod_count>
         <sys_name>File home</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sp_widget_53595bdec35c5710c05a33bc0501312a</sys_update_name>
-        <sys_updated_by>Siva</sys_updated_by>
-        <sys_updated_on>2026-11-16 10:14:49</sys_updated_on>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-17 15:02:03</sys_updated_on>
         <template><![CDATA[<div class="fm-app" ng-class="{'fm-picker': c.pickerMode}" ng-click="c.closeContextMenu()">
 
   <!-- ================= SIDEBAR ================= -->
