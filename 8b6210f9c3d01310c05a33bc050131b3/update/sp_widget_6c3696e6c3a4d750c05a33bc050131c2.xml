@@ -1,0 +1,297 @@
+<?xml version="1.0" encoding="UTF-8"?><record_update table="sp_widget">
+    <sp_widget action="INSERT_OR_UPDATE">
+        <category>custom</category>
+        <client_script><![CDATA[api.controller = function ($scope, $filter) {
+    var c = this;
+
+    c.currentFolder = '';
+    c.breadcrumb    = [];
+    c.searchText    = '';
+    c.viewMode      = 'list';
+    c.loading       = false;
+    c.error         = '';
+
+    function lc(s) { return (s || '').toLowerCase(); }
+
+    c.folders = function () {
+        var list = (c.data.folders || []).filter(function (f) {
+            return c.currentFolder ? f.parent_folder === c.currentFolder : f.is_root;
+        });
+        if (c.searchText) list = list.filter(function (f) { return lc(f.folder_name).indexOf(lc(c.searchText)) !== -1; });
+        return $filter('orderBy')(list, 'folder_name');
+    };
+
+    c.files = function () {
+        var list = (c.data.files || []).filter(function (f) {
+            return c.currentFolder ? f.folder === c.currentFolder : f.is_root;
+        });
+        if (c.searchText) list = list.filter(function (f) { return lc(f.filename).indexOf(lc(c.searchText)) !== -1; });
+        return $filter('orderBy')(list, '-sys_created_on');
+    };
+
+    c.openFolder = function (folder) {
+        c.breadcrumb.push({ id: folder.sys_id, name: folder.folder_name });
+        c.currentFolder = folder.sys_id;
+        c.searchText = '';
+    };
+
+    c.goTo = function (index) {            // index -1 = root
+        c.breadcrumb = c.breadcrumb.slice(0, index + 1);
+        c.currentFolder = index < 0 ? '' : c.breadcrumb[index].id;
+        c.searchText = '';
+    };
+
+    c.refresh = function () {
+        c.loading = true;
+        c.server.get({ action: 'refresh' }).then(function (res) {
+            var r = (res && res.data) ? res.data : res;
+            if (r && r.loaded) { c.data = r; }
+            c.loading = false;
+        }, function () { c.loading = false; c.error = 'Refresh failed.'; });
+    };
+
+    c.download = function (file) {
+        if (!file.attachment_id) { c.error = 'Attachment not found.'; return; }
+        window.open('/sys_attachment.do?sys_id=' + encodeURIComponent(file.attachment_id), '_blank');
+    };
+
+    c.formatBytes = function (b) {
+        b = parseInt(b, 10) || 0;
+        if (b < 1024) return b + ' B';
+        if (b < 1048576) return (b / 1024).toFixed(1) + ' KB';
+        if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB';
+        return (b / 1073741824).toFixed(2) + ' GB';
+    };
+
+    var _icons = {
+        pdf: 'fa-file-pdf-o', doc: 'fa-file-word-o', docx: 'fa-file-word-o',
+        xls: 'fa-file-excel-o', xlsx: 'fa-file-excel-o', csv: 'fa-file-excel-o',
+        ppt: 'fa-file-powerpoint-o', pptx: 'fa-file-powerpoint-o',
+        png: 'fa-file-image-o', jpg: 'fa-file-image-o', jpeg: 'fa-file-image-o', gif: 'fa-file-image-o',
+        zip: 'fa-file-zip-o', rar: 'fa-file-zip-o', txt: 'fa-file-text-o'
+    };
+    c.icon = function (f) { return 'fa ' + (_icons[lc(f.file_extension)] || 'fa-file-o'); };
+};]]></client_script>
+        <controller_as>c</controller_as>
+        <css>.pf-app { padding: 24px; font-family: Inter, Arial, sans-serif; color: #1f2a3d; }
+.pf-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; }
+.pf-header h2 { margin: 0; font-size: 22px; }
+.pf-header h2 i { color: #16a34a; }
+.pf-actions { display: flex; gap: 8px; }
+.pf-search { height: 36px; padding: 0 12px; border: 1px solid #d5dde8; border-radius: 9999px; width: 240px; }
+.pf-btn { height: 36px; min-width: 36px; border: 1px solid #d5dde8; background: #fff; border-radius: 8px; cursor: pointer; }
+.pf-btn:hover { background: #eff4ff; color: #2563eb; }
+.pf-crumbs { margin: 16px 0; font-size: 13px; }
+.pf-crumbs a { color: #2563eb; cursor: pointer; }
+.pf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.pf-card { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid #e6ebf2; border-radius: 12px; background: #fff; cursor: pointer; }
+.pf-card:hover { box-shadow: 0 4px 14px rgba(16,24,40,.08); }
+.pf-card strong { display: block; font-size: 13px; }
+.pf-card span { font-size: 11px; color: #64748b; }
+.pf-folder-icon { font-size: 26px; color: #f59e0b; }
+.pf-file-icon { font-size: 22px; color: #2563eb; }
+.pf-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e6ebf2; }
+.pf-table th, .pf-table td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #f1f4f9; font-size: 13px; }
+.pf-table th { background: #f8fafc; font-size: 11px; text-transform: uppercase; color: #64748b; }
+.pf-error { background: #fef2f2; color: #991b1b; padding: 10px 14px; border-radius: 8px; margin-top: 12px; }
+.pf-empty { color: #94a3b8; text-align: center; padding: 40px 0; }</css>
+        <data_table>sp_instance</data_table>
+        <demo_data/>
+        <description/>
+        <docs/>
+        <field_list/>
+        <has_preview>true</has_preview>
+        <id/>
+        <internal>false</internal>
+        <link><![CDATA[function link(scope, element, attrs, controller) {
+  
+}]]></link>
+        <name>Public_files</name>
+        <option_schema/>
+        <public>false</public>
+        <roles/>
+        <script><![CDATA[(function () {
+    var FILE_TABLE   = 'x_1830514_fm_file';
+    var FOLDER_TABLE = 'x_1830514_fm_folder';
+
+    data.folders = [];
+    data.files   = [];
+    data.error   = '';
+    data.loaded  = false;
+
+    try {
+        if (input && input.action === 'refresh') { /* falls through to load */ }
+        loadPublic();
+        data.loaded = true;
+    } catch (e) {
+        gs.error('PublicFilesWidget: ' + e.message);
+        data.error = 'Unable to load public files.';
+    }
+
+    function isTrue(gr, field) {
+        if (!gr.isValidField(field)) return false;
+        var v = String(gr.getValue(field));
+        return v === '1' || v === 'true';
+    }
+
+    function addFolder(f, isRoot) {
+        var o = {
+            sys_id:        f.getUniqueValue(),
+            folder_name:   f.getValue('folder_name') || f.getValue('name') || '',
+            parent_folder: f.getValue('parent_folder') || '',
+            owner_name:    f.getDisplayValue('owner') || '',
+            color:         (f.isValidField('color') && f.getValue('color')) || 'orange',
+            created_date:  f.getDisplayValue('sys_created_on') || '',
+            is_root:       !!isRoot
+        };
+        data.folders.push(o);
+        return o;
+    }
+
+    function addFile(f, isRoot) {
+        var o = {
+            sys_id:         f.getUniqueValue(),
+            filename:       f.getValue('filename') || f.getValue('file_name') || f.getValue('name') || '',
+            folder:         f.getValue('folder') || '',
+            owner_name:     f.getDisplayValue('owner') || '',
+            file_extension: f.getValue('file_extension') || '',
+            content_type:   f.getValue('content_type') || '',
+            file_size:      parseInt(f.getValue('file_size'), 10) || 0,
+            attachment_id:  '',
+            created_date:   f.getDisplayValue('sys_created_on') || '',
+            sys_created_on: f.getValue('sys_created_on') || '',
+            is_root:        !!isRoot
+        };
+        data.files.push(o);
+        return o;
+    }
+
+    function addTree(folderId, isRoot, seenFolders, seenFiles, depth) {
+        if (depth > 20) return;
+        if (seenFolders[folderId]) { if (isRoot) seenFolders[folderId].is_root = true; return; }
+
+        var folder = new GlideRecord(FOLDER_TABLE);
+        if (!folder.get(folderId) || isTrue(folder, 'is_deleted')) return;
+        seenFolders[folderId] = addFolder(folder, isRoot);
+
+        var ff = new GlideRecord(FILE_TABLE);
+        ff.addQuery('folder', folderId);
+        ff.addQuery('is_deleted', false);
+        ff.query();
+        while (ff.next()) {
+            var fid = ff.getUniqueValue();
+            if (!seenFiles[fid]) seenFiles[fid] = addFile(ff, false);
+        }
+
+        var sub = new GlideRecord(FOLDER_TABLE);
+        sub.addQuery('parent_folder', folderId);
+        sub.addQuery('is_deleted', false);
+        sub.query();
+        var ids = [];
+        while (sub.next()) ids.push(sub.getUniqueValue());
+        for (var i = 0; i < ids.length; i++) addTree(ids[i], false, seenFolders, seenFiles, depth + 1);
+    }
+
+    function loadPublic() {
+        var probe = new GlideRecord(FILE_TABLE);
+        if (!probe.isValidField('is_public')) { data.error = 'The is_public field is missing.'; return; }
+
+        var seenFolders = {}, seenFiles = {}, rootIds = [];
+
+        var pf = new GlideRecord(FOLDER_TABLE);
+        pf.addQuery('is_public', true);
+        pf.addQuery('is_deleted', false);
+        pf.query();
+        while (pf.next()) rootIds.push(pf.getUniqueValue());
+        for (var i = 0; i < rootIds.length; i++) addTree(rootIds[i], true, seenFolders, seenFiles, 0);
+
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('is_public', true);
+        files.addQuery('is_deleted', false);
+        files.orderByDesc('sys_created_on');
+        files.query();
+        while (files.next()) {
+            var id = files.getUniqueValue();
+            if (seenFiles[id]) seenFiles[id].is_root = true;
+            else seenFiles[id] = addFile(files, true);
+        }
+
+        // one query for all attachments
+        var ids = data.files.map(function (f) { return f.sys_id; });
+        if (ids.length) {
+            var map = {};
+            var att = new GlideRecord('sys_attachment');
+            att.addQuery('table_name', FILE_TABLE);
+            att.addQuery('table_sys_id', 'IN', ids.join(','));
+            att.orderBy('sys_created_on');
+            att.query();
+            while (att.next()) map[att.getValue('table_sys_id')] = att.getUniqueValue();
+            data.files.forEach(function (f) { f.attachment_id = map[f.sys_id] || ''; });
+        }
+    }
+})();]]></script>
+        <servicenow>false</servicenow>
+        <sys_class_name>sp_widget</sys_class_name>
+        <sys_created_by>sumanth</sys_created_by>
+        <sys_created_on>2026-11-17 11:16:08</sys_created_on>
+        <sys_id>6c3696e6c3a4d750c05a33bc050131c2</sys_id>
+        <sys_mod_count>2</sys_mod_count>
+        <sys_name>Public_files</sys_name>
+        <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
+        <sys_policy/>
+        <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
+        <sys_update_name>sp_widget_6c3696e6c3a4d750c05a33bc050131c2</sys_update_name>
+        <sys_updated_by>sumanth</sys_updated_by>
+        <sys_updated_on>2026-11-17 11:33:50</sys_updated_on>
+        <template><![CDATA[<div class="pf-app">
+  <div class="pf-header">
+    <h2><i class="fa fa-globe"></i> Public Files</h2>
+    <div class="pf-actions">
+      <input type="text" class="pf-search" ng-model="c.searchText" placeholder="Search...">
+      <button class="pf-btn" ng-click="c.viewMode = c.viewMode == 'list' ? 'grid' : 'list'">
+        <i class="fa" ng-class="c.viewMode == 'list' ? 'fa-th-large' : 'fa-bars'"></i>
+      </button>
+      <button class="pf-btn" ng-click="c.refresh()"><i class="fa fa-refresh" ng-class="{'fa-spin': c.loading}"></i></button>
+    </div>
+  </div>
+
+  <div class="pf-error" ng-if="c.error || c.data.error">{{c.error || c.data.error}}</div>
+
+  <div class="pf-crumbs">
+    <a ng-click="c.goTo(-1)">Public</a>
+    <span ng-repeat="b in c.breadcrumb track by $index"> / <a ng-click="c.goTo($index)">{{b.name}}</a></span>
+  </div>
+
+  <h4 ng-if="c.folders().length">Folders</h4>
+  <div class="pf-grid" ng-if="c.folders().length">
+    <div class="pf-card" ng-repeat="f in c.folders() track by f.sys_id" ng-click="c.openFolder(f)">
+      <i class="fa fa-folder pf-folder-icon"></i>
+      <div><strong>{{f.folder_name}}</strong><span>By {{f.owner_name}} · {{f.created_date}}</span></div>
+    </div>
+  </div>
+
+  <h4>Files</h4>
+  <table class="pf-table" ng-if="c.viewMode == 'list' && c.files().length">
+    <thead><tr><th>Name</th><th>Owner</th><th>Size</th><th>Created</th><th></th></tr></thead>
+    <tbody>
+      <tr ng-repeat="f in c.files() track by f.sys_id">
+        <td><i ng-class="c.icon(f)"></i> {{f.filename}}</td>
+        <td>{{f.owner_name}}</td>
+        <td>{{c.formatBytes(f.file_size)}}</td>
+        <td>{{f.created_date}}</td>
+        <td><button class="pf-btn" ng-click="c.download(f)"><i class="fa fa-download"></i></button></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="pf-grid" ng-if="c.viewMode == 'grid' && c.files().length">
+    <div class="pf-card" ng-repeat="f in c.files() track by f.sys_id" ng-click="c.download(f)">
+      <i class="pf-file-icon" ng-class="c.icon(f)"></i>
+      <div><strong>{{f.filename}}</strong><span>{{c.formatBytes(f.file_size)}} · {{f.owner_name}}</span></div>
+    </div>
+  </div>
+
+  <p class="pf-empty" ng-if="!c.files().length && !c.folders().length">No public items found.</p>
+</div>]]></template>
+    </sp_widget>
+</record_update>
