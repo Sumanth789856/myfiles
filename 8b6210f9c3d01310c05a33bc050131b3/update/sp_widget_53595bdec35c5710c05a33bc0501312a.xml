@@ -2,12 +2,16 @@
     <sp_widget action="INSERT_OR_UPDATE">
         <category>custom</category>
         <client_script><![CDATA[/**
- * File Manager Widget — Client Script (CORRECTED + INTERACTIVE)
+ * File Manager Widget (PRIVATE) - Client Script
  * AngularJS Controller + Link Function
+ * Public files are handled by the separate "public_files" widget / page.
  */
 
 api.controller = function ($scope, $http, $timeout, $location, $filter, $templateCache) {
     var c = this;
+
+    /* >>> CHANGE THIS to the Page ID of your Public_file_manger page <<< */
+    var PUBLIC_PAGE_ID = 'public_file_manger';
 
     /* ===================================================
        STATE
@@ -16,7 +20,6 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     c.homeSubView = '';
     c.sharedView = 'withMe'; // withMe | byMe
     c.viewMode = 'list';   // list | grid
-    c.privacyFilter = 'public'; // private | public
     c.pageSize = 10;
     c.currentPages = { allFiles: 1, rootFolders: 1, childFolders: 1, folderFiles: 1, sharedFolders: 1, sharedFiles: 1, sharedByMe: 1 };
     c.currentFolder = '';
@@ -25,31 +28,24 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     c.loading = false;
     c.breadcrumb = [];
 
-    c.isPublic = function () {
-        return c.privacyFilter === 'public';
-    };
+    /* This widget is private-only. These helpers are kept so the template keeps working. */
+    c.isPublic = function () { return false; };
+    c.canCreate = function () { return true; };
 
-    c.canCreate = function () {
-        if (!c.isPublic()) return true;
-        return !!(c.data && (c.data.can_create_public || c.data.has_public_role));
-    };
-
-    c.filesCount = function () {
-        return (c.isPublic() ? ((c.data && c.data.publicFiles) || []) : ((c.data && c.data.files) || [])).length;
-    };
+    c.filesCount = function () { return ((c.data && c.data.files) || []).length; };
 
     c.setViewMode = function (m) { c.viewMode = m; };
 
-    c.setPrivacyFilter = function (f) {
-        c.privacyFilter = f;
-        if (f === 'public') {
-            if (c.view !== 'allfiles' && c.view !== 'folders' && c.view !== 'files') {
-                c.setView('allfiles');
-            }
+    /** Link to the public page (keeps the picker parameters) */
+    c.publicPageUrl = function () {
+        var url = '?id=' + PUBLIC_PAGE_ID;
+        if (c.pickerMode) {
+            url += '&picker=true&target_table=' + encodeURIComponent(c.targetTable) +
+                   '&target_sys_id=' + encodeURIComponent(c.targetSysId);
         }
-        if (c.resetPagination) c.resetPagination();
-        if (c.clearSelection) c.clearSelection();
+        return url;
     };
+
     c.sidebarStoragePct = function () {
         var total = (c.data && c.data.storage && c.data.storage.totalBytes) || 0;
         var max = 5 * 1073741824; // 5 GB
@@ -67,6 +63,8 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     c.showRenameFileModal = false;
     c.showUploadFolderPicker = false;
     c.showAddToFolderModal = false;
+    c.showNicknameModal = false;
+    c.pendingItems = [];
     c.previewFile = null;
 
     c.addToFolderTarget = null;
@@ -111,6 +109,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
 
     c.editFileTarget = null;
     c.editFileDescription = '';
+    c.editFileNickname = '';
 
     c.confirmModal = { show: false, title: '', message: '', confirmLabel: 'Confirm', danger: false, icon: 'fa-check', onConfirm: angular.noop };
     c.contextMenu = { show: false, x: 0, y: 0, item: null, type: '' };
@@ -244,11 +243,9 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     };
 
     function _allFolders() {
-        if (c.isPublic()) return (c.data && c.data.publicFolders) || [];
         return ((c.data && c.data.folders) || []).concat((c.data && c.data.sharedFolders) || []);
     }
     function _allFiles() {
-        if (c.isPublic()) return (c.data && c.data.publicFiles) || [];
         return ((c.data && c.data.files) || []).concat((c.data && c.data.sharedFiles) || []);
     }
 
@@ -327,8 +324,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     =================================================== */
 
     c.rootFolders = function () {
-        var list = c.isPublic() ? ((c.data && c.data.publicFolders) || []) : ((c.data && c.data.folders) || []);
-        return list.filter(function (f) { return !f.parent_folder; });
+        return ((c.data && c.data.folders) || []).filter(function (f) { return !f.parent_folder; });
     };
     c.sharedRootFolders = function () {
         return ((c.data && c.data.sharedFolders) || []).filter(function (f) { return f.share_root; });
@@ -342,10 +338,6 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     };
 
     c.editableFolders = function () {
-        if (c.isPublic()) {
-            if (!c.canCreate()) return [];
-            return (c.data && c.data.publicFolders) || [];
-        }
         var owned = (c.data && c.data.folders) || [];
         var sharedEdit = ((c.data && c.data.sharedFolders) || []).filter(function (f) { return f.can_edit; });
         return owned.concat(sharedEdit);
@@ -387,10 +379,10 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     };
 
     c.allFilesFiltered = function () {
-        var source = c.isPublic() ? ((c.data && c.data.publicFiles) || []) : ((c.data && c.data.files) || []);
+        var source = (c.data && c.data.files) || [];
         return source.filter(function (file) {
             if (c.searchText) {
-                var hit = (file.filename || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
+                var hit = c.matchFile(file);
                 if (!hit) return false;
             }
             if (!c.fileTypeFilter) return true;
@@ -407,8 +399,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     };
 
     c.searchFiles = function (file) {
-        if (!c.searchText) return true;
-        return (file.filename || '').toLowerCase().indexOf(c.searchText.toLowerCase()) !== -1;
+        return c.matchFile(file);
     };
 
     c.searchFolders = function (folder) {
@@ -458,8 +449,6 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
 
     /* ===================================================
        CLIENT-SIDE LISTS + PAGINATION
-       Everything is filtered/sorted first, then paged, so search
-       and sort work across the complete result set.
     =================================================== */
     function _sortFiles(list) { return $filter('orderBy')(list, c.fileSort); }
     function _sortFolders(list) { return $filter('orderBy')(list, c.folderSort); }
@@ -635,11 +624,46 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
         _uploadFilesToFolder(files, folderId);
     };
 
+    /* ---- XML uploads: ask for an optional nickname before uploading ---- */
+    function _isXml(file) { return /\.xml$/i.test((file && file.name) || ''); }
+
+    c.stageUpload = function (items) {
+        if (!items || !items.length) return;
+        if (c.uploading) { c.error = 'An upload is already in progress. Please wait.'; return; }
+        var hasXml = items.some(function (it) { return _isXml(it.file); });
+        if (!hasXml) { _uploadItems(items); return; }
+        items.forEach(function (it) { it.isXml = _isXml(it.file); it.nickname = ''; });
+        c.pendingItems = items;
+        c.showNicknameModal = true;
+        _clearAlerts();
+    };
+    c.pendingOtherCount = function () {
+        return (c.pendingItems || []).filter(function (it) { return !it.isXml; }).length;
+    };
+    c.confirmNicknameUpload = function () {
+        var items = c.pendingItems || [];
+        c.pendingItems = [];
+        c.showNicknameModal = false;
+        items.forEach(function (it) {
+            it.nickname = it.isXml ? String(it.nickname || '').replace(/[\[\]]/g, '').trim().substring(0, 50) : '';
+        });
+        _uploadItems(items);
+    };
+    c.cancelNicknameUpload = function () { c.pendingItems = []; c.showNicknameModal = false; };
+
+    /* search matches file name OR nickname */
+    c.matchFile = function (file) {
+        var q = (c.searchText || '').toLowerCase();
+        if (!q) return true;
+        return (file.filename || '').toLowerCase().indexOf(q) !== -1 ||
+               (file.nickname || '').toLowerCase().indexOf(q) !== -1;
+    };
+
     function _uploadFilesToFolder(fileList, folderId) {
         var files = Array.prototype.slice.call(fileList || []);
         if (!files.length) return;
         if (!folderId) { c.error = 'Please select a destination folder before uploading.'; return; }
-        _uploadItems(files.map(function (f) { return { file: f, folderId: folderId }; }));
+        c.stageUpload(files.map(function (f) { return { file: f, folderId: folderId }; }));
     }
 
     /** items: [{ file: File, folderId: sys_id }] */
@@ -683,8 +707,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
             c.runAction('create_file', {
                 filename: file.name, extension: ext,
                 content_type: file.type || 'application/octet-stream',
-                file_size: file.size, folder: item.folderId, skip_load: '1',
-                is_public: c.isPublic()
+                file_size: file.size, folder: item.folderId, nickname: item.nickname || '', skip_load: '1'
             }).then(function (result) {
                 if (result.error || !result.file_sys_id) {
                     failed.push(file.name);
@@ -770,7 +793,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
                     parts.pop();
                     return { file: f, folderId: idMap[parts.join('/')] };
                 }).filter(function (it) { return !!it.folderId; });
-                _uploadItems(items);
+                c.stageUpload(items);
                 return;
             }
 
@@ -781,8 +804,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
 
             c.runAction('create_folder', {
                 folder_name: name, description: 'Uploaded folder',
-                parent_folder: parent || '', reuse_existing: '1', skip_load: '1',
-                is_public: c.isPublic()
+                parent_folder: parent || '', reuse_existing: '1', skip_load: '1'
             }).then(function (r) {
                 if (r.error || !r.folder_sys_id) {
                     c.uploading = false;
@@ -840,8 +862,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
             folder_name: name,
             description: c.newFolderDescription || '',
             parent_folder: c.currentFolder || '',
-            color: c.newFolderColor || 'orange',
-            is_public: c.isPublic()
+            color: c.newFolderColor || 'orange'
         }).then(function (result) {
             if (result.error) return;      // stay in the modal and show the error
             c.closeFolderModal();
@@ -887,6 +908,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     c.openEditFile = function (file) {
         c.editFileTarget = file;
         c.editFileDescription = file.description || '';
+        c.editFileNickname = file.nickname || '';
         _clearAlerts();
         c.showEditFileModal = true;
     };
@@ -895,7 +917,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     c.saveEditFile = function () {
         if (!c.editFileTarget) return;
         c.runAction('update_file', {
-            sys_id: c.editFileTarget.sys_id, description: c.editFileDescription || ''
+            sys_id: c.editFileTarget.sys_id, description: c.editFileDescription || '', nickname: c.editFileNickname || ''
         }).then(function (r) {
             if (!r.error) { c.showEditFileModal = false; c.editFileTarget = null; }
         });
@@ -1113,7 +1135,6 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     };
 
     c.canDeleteSelected = function () {
-        if (c.isPublic() && !c.canCreate()) return false;
         return c.getSelectedFiles().some(function (f) { return f.permission === 'Owner'; });
     };
 
@@ -1376,7 +1397,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
 
     c.anyModalOpen = function () {
         return !!(c.showFolderModal || c.showShareModal || c.showEditFileModal || c.showRenameFileModal ||
-            c.showUploadFolderPicker || c.showAddToFolderModal || c.confirmModal.show || c.previewFile);
+            c.showUploadFolderPicker || c.showAddToFolderModal || c.showNicknameModal || c.confirmModal.show || c.previewFile);
     };
 
     c.onKeyDown = function (e) {
@@ -1387,6 +1408,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
         if (key === 'Escape' || e.keyCode === 27) {
             if (c.contextMenu.show) { c.closeContextMenu(); return; }
             if (c.previewFile) { c.closePreview(); return; }
+            if (c.showNicknameModal) { c.cancelNicknameUpload(); return; }
             if (c.confirmModal.show) { c.confirmModal.show = false; return; }
             if (c.showAddToFolderModal) { c.closeAddToFolder(); return; }
             if (c.showRenameFileModal) { c.showRenameFileModal = false; return; }
@@ -1604,8 +1626,7 @@ api.link = function ($scope, element) {
         window.removeEventListener('scroll', closeMenuOnScroll, true);
         window.removeEventListener('resize', closeMenuOnScroll);
     });
-};
-]]></client_script>
+};]]></client_script>
         <controller_as>c</controller_as>
         <css>/* =========================================================
    FILE MANAGER — LIGHT PROFESSIONAL THEME
@@ -4347,13 +4368,46 @@ tr:hover .fm-file-icon-box,
         animation-duration: 0.01ms !important;
         transition-duration: 0.01ms !important;
     }
-}</css>
+}
+a.fm-privacy-btn { text-decoration: none; }
+.fm-sidebar .fm-privacy-btn:not(.active) { cursor: pointer; }
+/* ADD THESE LINES AT THE END OF THE CSS OF BOTH WIDGETS (keep your existing CSS) */
+
+a.fm-privacy-btn { text-decoration: none; }
+
+/* file name + nickname badge */
+.fm-file-name-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.fm-nick {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    width: fit-content;
+    max-width: 260px;
+    padding: 1px 9px;
+    border-radius: 9999px;
+    background: var(--fm-primary-50);
+    color: var(--fm-primary-600);
+    border: 1px solid var(--fm-primary-100);
+    font-size: 11px;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.fm-nick i { font-size: 10px; }</css>
         <data_table>sp_instance</data_table>
         <demo_data/>
         <description/>
         <docs/>
         <field_list/>
-        <has_preview>false</has_preview>
+        <has_preview>true</has_preview>
         <id>file_home</id>
         <internal>false</internal>
         <link><![CDATA[function link(scope, element, attrs, controller) {  }]]></link>
@@ -4363,12 +4417,14 @@ tr:hover .fm-file-icon-box,
         <roles/>
         <script><![CDATA[(function () {
     /*
-     * File Manager Widget — Server Script (CORRECTED + COMPLETE)
+     * File Manager Widget (PRIVATE) - Server Script
+     * Public files/folders are handled by the separate "public_files" widget
+     * and are never loaded or created here.
      *
      * Tables used:
-     *   x_1830514_fm_file    — File records
-     *   x_1830514_fm_folder  — Folder records
-     *   x_1830514_fm_share   — Share records
+     *   x_1830514_fm_file    - File records
+     *   x_1830514_fm_folder  - Folder records
+     *   x_1830514_fm_share   - Share records
      */
 
     var FILE_TABLE   = 'x_1830514_fm_file';
@@ -4378,36 +4434,9 @@ tr:hover .fm-file-icon-box,
     var userId = gs.getUserID();
     var _myGroupIds = null;   // cache
 
-    var PUBLIC_ROLE = 'x_1830514_fm.Public';
-    var hasPublicRole = gs.hasRole(PUBLIC_ROLE);
-    if (!hasPublicRole && gs.isLoggedIn()) {
-        var myUser = gs.getUserID();
-        var grMember = new GlideRecord('sys_user_grmember');
-        grMember.addQuery('user', myUser);
-        grMember.query();
-        var myGroups = [];
-        while (grMember.next()) {
-            myGroups.push(String(grMember.getValue('group')));
-        }
-        if (myGroups.length > 0) {
-            var grGroupRole = new GlideRecord('sys_group_has_role');
-            grGroupRole.addQuery('group', 'IN', myGroups.join(','));
-            grGroupRole.addQuery('role.name', PUBLIC_ROLE);
-            grGroupRole.setLimit(1);
-            grGroupRole.query();
-            if (grGroupRole.hasNext()) {
-                hasPublicRole = true;
-            }
-        }
-    }
-    data.has_public_role = !!hasPublicRole;
-    data.can_create_public = !!hasPublicRole;
-
     /* ---- Initialise response ---- */
     data.files          = [];
     data.folders        = [];
-    data.publicFiles    = [];
-    data.publicFolders  = [];
     data.sharedFiles    = [];
     data.sharedFolders  = [];
     data.sharedByMe     = [];
@@ -4495,6 +4524,38 @@ tr:hover .fm-file-icon-box,
     /** Set a field only when the table actually has it (avoids errors on optional columns) */
     function _setIf(gr, field, value) {
         if (gr.isValidField(field)) gr.setValue(field, value);
+    }
+
+    /* ---- Nickname helpers (uses the "nickname" column if it exists, otherwise a [nick:...] marker in description) ---- */
+    function cleanNick(s) { return String(s || '').replace(/[\[\]]/g, '').trim().substring(0, 50); }
+    function cleanDescText(d) {
+        return String(d || '').replace(/\[nick:[^\]]*\]\s*/ig, '').replace(/\[public\]\s*/ig, '').trim();
+    }
+    function readNick(gr) {
+        if (gr.isValidField('nickname')) return gr.getValue('nickname') || '';
+        var m = (gr.getValue('description') || '').match(/\[nick:([^\]]*)\]/i);
+        return m ? m[1] : '';
+    }
+    function writeNick(gr, nick) {
+        nick = cleanNick(nick);
+        if (gr.isValidField('nickname')) { gr.setValue('nickname', nick); return; }
+        var d = (gr.getValue('description') || '').replace(/\[nick:[^\]]*\]\s*/ig, '').trim();
+        gr.setValue('description', (d ? d + ' ' : '') + (nick ? '[nick:' + nick + ']' : ''));
+    }
+
+    /** Public records belong to the Public Files widget */
+    function isRecordPublic(gr) {
+        if (!gr) return false;
+        if (gr.isValidField('is_public')) {
+            var v = gr.getValue('is_public');
+            if (v === true || v === 'true' || v === '1' || v === 1) return true;
+        }
+        if (gr.isValidField('access')) {
+            var a = (gr.getValue('access') || '').toLowerCase();
+            if (a === 'public') return true;
+        }
+        var desc = gr.getValue('description') || '';
+        return desc.indexOf('[public]') !== -1;
     }
 
     /** sys_ids of all groups the current user belongs to (cached) */
@@ -4637,31 +4698,23 @@ tr:hover .fm-file-icon-box,
         }
     }
 
-    /** Push a file into a list. Returns the pushed object (or null if no permission) */
-    function addFileToList(file, target, isShareRoot, isPublicItem) {
-        var isPub = isPublicItem || isRecordPublic(file);
-        var permission = '';
-        if (isPub) {
-            if (file.getValue('owner') === userId) permission = 'Owner';
-            else if (hasPublicRole) permission = 'Editor';
-            else permission = 'Viewer';
-        } else {
-            permission = getFilePermission(file);
-        }
+    /** Push a private file into a list. Returns the pushed object (or null if no permission / public) */
+    function addFileToList(file, target, isShareRoot) {
+        if (isRecordPublic(file)) return null;       // public files live in the Public Files widget
+
+        var permission = getFilePermission(file);
         if (!permission) return null;
 
         var fn = file.getValue('filename') || file.getValue('file_name') ||
                  file.getValue('name') || file.getDisplayValue() || '';
-
-        var rawDesc = file.getValue('description') || '';
-        var cleanDesc = rawDesc.replace(/\[public\]\s*/ig, '').trim();
 
         var obj = {
             sys_id:         file.getUniqueValue(),
             filename:       fn,
             folder:         file.getValue('folder') || '',
             folder_name:    file.getDisplayValue('folder') || '',
-            description:    cleanDesc,
+            description:    cleanDescText(file.getValue('description')),
+            nickname:       readNick(file),
             owner:          file.getValue('owner') || '',
             file_extension: file.getValue('file_extension') || '',
             file_size:      parseInt(file.getValue('file_size'), 10) || 0,
@@ -4671,23 +4724,16 @@ tr:hover .fm-file-icon-box,
             can_edit:       canEdit(permission),
             share_root:     !!isShareRoot,
             sys_created_on: file.getValue('sys_created_on') || '',
-            created_date:   file.getDisplayValue('sys_created_on') || '',
-            is_public:      !!isPub
+            created_date:   file.getDisplayValue('sys_created_on') || ''
         };
         target.push(obj);
         return obj;
     }
 
-    function addFolderToList(folder, target, isShareRoot, isPublicItem) {
-        var isPub = isPublicItem || isRecordPublic(folder);
-        var permission = '';
-        if (isPub) {
-            if (folder.getValue('owner') === userId) permission = 'Owner';
-            else if (hasPublicRole) permission = 'Editor';
-            else permission = 'Viewer';
-        } else {
-            permission = getFolderPermission(folder.getUniqueValue());
-        }
+    function addFolderToList(folder, target, isShareRoot) {
+        if (isRecordPublic(folder)) return null;
+
+        var permission = getFolderPermission(folder.getUniqueValue());
         if (!permission) return null;
 
         var fn = folder.getValue('folder_name') || folder.getValue('name') || folder.getDisplayValue() || '';
@@ -4701,7 +4747,7 @@ tr:hover .fm-file-icon-box,
             if (m) color = m[1];
         }
         color = color || 'orange';
-        var cleanDesc = rawDesc.replace(/\[color:[a-z0-9#-]+\]\s*/ig, '').replace(/\[public\]\s*/ig, '').trim();
+        var cleanDesc = rawDesc.replace(/\[color:[a-z0-9#-]+\]\s*/ig, '').trim();
 
         var obj = {
             sys_id:         folder.getUniqueValue(),
@@ -4714,8 +4760,7 @@ tr:hover .fm-file-icon-box,
             created_date:   folder.getDisplayValue('sys_created_on') || '',
             permission:     permission,
             can_edit:       canEdit(permission),
-            share_root:     !!isShareRoot,
-            is_public:      !!isPub
+            share_root:     !!isShareRoot
         };
         target.push(obj);
         return obj;
@@ -4736,7 +4781,7 @@ tr:hover .fm-file-icon-box,
         att.deleteMultiple();
     }
 
-    /* Helper: check if a folder exists by name and parent for current user */
+    /* Helper: check if one of MY private folders exists by name and parent */
     function _findFolderId(folderName, parentFolder, excludeId) {
         if (!folderName) return '';
         var gr = new GlideRecord(FOLDER_TABLE);
@@ -4756,10 +4801,9 @@ tr:hover .fm-file-icon-box,
             gr.addQuery('sys_id', '!=', excludeId);
         }
 
-        gr.setLimit(1);
         gr.query();
-        if (gr.next()) {
-            return gr.getUniqueValue();
+        while (gr.next()) {
+            if (!isRecordPublic(gr)) return gr.getUniqueValue();
         }
         return '';
     }
@@ -4898,7 +4942,6 @@ tr:hover .fm-file-icon-box,
         var folderName   = (input.folder_name || '').trim();
         var parentFolder = (input.parent_folder || '').trim();
         var description  = (input.description || '').trim();
-        var isPublic     = input.is_public === true || input.is_public === 'true' || input.is_public === '1';
 
         if (!folderName) { data.error = 'Please enter a folder name.'; return; }
         if (folderName.length > 40) { data.error = 'Folder name cannot exceed 40 characters.'; return; }
@@ -4907,17 +4950,13 @@ tr:hover .fm-file-icon-box,
             var parent = getRecord(FOLDER_TABLE, parentFolder);
             if (!parent || isDeleted(parent)) { data.error = 'Parent folder not found.'; return; }
             if (isRecordPublic(parent)) {
-                isPublic = true;
+                data.error = 'Public folders are managed on the Public Files page.';
+                return;
             }
-            if (!isPublic && !canEdit(getFolderPermission(parent.getUniqueValue()))) {
+            if (!canEdit(getFolderPermission(parent.getUniqueValue()))) {
                 data.error = 'You do not have permission to create a subfolder here.';
                 return;
             }
-        }
-
-        if (isPublic && !hasPublicRole) {
-            data.error = 'Only users or groups with the role x_1830514_fm.Public can create public folders.';
-            return;
         }
 
         var existingId = _findFolderId(folderName, parentFolder, null);
@@ -4942,17 +4981,9 @@ tr:hover .fm-file-icon-box,
         _setIf(folder, 'color', color);
         _setIf(folder, 'folder_color', color);
 
-        if (isPublic) {
-            _setIf(folder, 'is_public', true);
-            _setIf(folder, 'access', 'public');
-        }
-
         var storedDesc = description;
         if (!folder.isValidField('color') && !folder.isValidField('folder_color')) {
             storedDesc = (description ? description + ' ' : '') + '[color:' + color + ']';
-        }
-        if (isPublic && (!folder.isValidField('is_public') || storedDesc.indexOf('[public]') === -1)) {
-            storedDesc = (storedDesc ? storedDesc + ' ' : '') + '[public]';
         }
 
         folder.setValue('owner', userId);
@@ -5102,7 +5133,6 @@ tr:hover .fm-file-icon-box,
     function createFile() {
         var filename = (input.filename || '').trim();
         var folderId = (input.folder || '').trim();
-        var isPublic = input.is_public === true || input.is_public === 'true' || input.is_public === '1';
 
         if (!filename || !folderId) { data.error = 'File name and destination folder are required.'; return; }
         if (filename.length > 255)  { data.error = 'File name is too long (max 255 characters).'; return; }
@@ -5110,15 +5140,11 @@ tr:hover .fm-file-icon-box,
         var folder = getRecord(FOLDER_TABLE, folderId);
         if (!folder || isDeleted(folder)) { data.error = 'Destination folder not found.'; return; }
         if (isRecordPublic(folder)) {
-            isPublic = true;
-        }
-
-        if (isPublic && !hasPublicRole) {
-            data.error = 'Only users or groups with the role x_1830514_fm.Public can upload public files.';
+            data.error = 'Public folders are managed on the Public Files page.';
             return;
         }
 
-        if (!isPublic && !canEdit(getFolderPermission(folder.getUniqueValue()))) {
+        if (!canEdit(getFolderPermission(folder.getUniqueValue()))) {
             data.error = 'You do not have permission to upload into this folder.';
             return;
         }
@@ -5137,14 +5163,7 @@ tr:hover .fm-file-icon-box,
         file.setValue('content_type', input.content_type || 'application/octet-stream');
         file.setValue('is_deleted', false);
         _setIf(file, 'current_version', 1);
-
-        if (isPublic) {
-            _setIf(file, 'is_public', true);
-            _setIf(file, 'access', 'public');
-            var desc = input.description || '';
-            if (desc.indexOf('[public]') === -1) desc = (desc ? desc + ' ' : '') + '[public]';
-            file.setValue('description', desc);
-        }
+        writeNick(file, input.nickname);
 
         var fileId = file.insert();
         if (!fileId) { data.error = 'Unable to create file record. Please check your permissions.'; return; }
@@ -5157,16 +5176,19 @@ tr:hover .fm-file-icon-box,
     function discardFile() {
         var file = getRecord(FILE_TABLE, input.sys_id);
         if (!file || !canOwnFile(file)) return;
-        if (getAttachmentId(file.getUniqueValue())) return;   // has an attachment — keep it
+        if (getAttachmentId(file.getUniqueValue())) return;   // has an attachment - keep it
         file.deleteRecord();
     }
 
     function updateFile() {
         var file = getRecord(FILE_TABLE, input.sys_id);
         if (!file || isDeleted(file)) { data.error = 'File not found.'; return; }
+        if (isRecordPublic(file)) { data.error = 'Public files are managed on the Public Files page.'; return; }
         if (!canEdit(getFilePermission(file))) { data.error = 'You do not have permission to edit this file.'; return; }
 
-        file.setValue('description', (input.description || '').substring(0, 1000));
+        var keepNick = readNick(file);
+        file.setValue('description', cleanDescText(input.description).substring(0, 900));
+        writeNick(file, input.nickname !== undefined ? input.nickname : keepNick);
         if (!file.update()) { data.error = 'Unable to update file.'; return; }
 
         data.success = 'File updated successfully.';
@@ -5265,6 +5287,7 @@ tr:hover .fm-file-icon-box,
         files.addQuery('is_deleted', true);
         files.query();
         while (files.next()) {
+            if (isRecordPublic(files)) continue;     // belongs to the Public Files recycle bin
             var fid = files.getUniqueValue();
             _deleteAttachments(fid);
             _deleteShares('file', fid);
@@ -5276,6 +5299,7 @@ tr:hover .fm-file-icon-box,
         folders.addQuery('is_deleted', true);
         folders.query();
         while (folders.next()) {
+            if (isRecordPublic(folders)) continue;
             _deleteShares('folder', folders.getUniqueValue());
             folders.deleteRecord();
         }
@@ -5298,6 +5322,7 @@ tr:hover .fm-file-icon-box,
         var targetFolder = getRecord(FOLDER_TABLE, targetFolderId);
         if (!targetFolder || isDeleted(targetFolder)) { data.error = 'Destination folder not found.'; return; }
         if (!canOwnFolder(targetFolder)) { data.error = 'You can only add items to folders owned by you.'; return; }
+        if (isRecordPublic(targetFolder)) { data.error = 'Choose one of your private folders.'; return; }
 
         if (itemType !== 'file' && itemType !== 'folder') {
             var maybeFolder = getRecord(FOLDER_TABLE, sourceId);
@@ -5347,12 +5372,13 @@ tr:hover .fm-file-icon-box,
 
         newFile.setValue('folder', targetFolderId);
         newFile.setValue('owner', userId);
-        _setIf(newFile, 'description',     sourceFile.getValue('description') || '');
+        _setIf(newFile, 'description',     cleanDescText(sourceFile.getValue('description')));
         _setIf(newFile, 'file_extension',  sourceFile.getValue('file_extension') || '');
         _setIf(newFile, 'file_size',       sourceFile.getValue('file_size') || 0);
         _setIf(newFile, 'content_type',    sourceFile.getValue('content_type') || '');
         _setIf(newFile, 'current_version', 1);
         _setIf(newFile, 'is_deleted',      false);
+        writeNick(newFile, readNick(sourceFile));
 
         var newFileId = newFile.insert();
         if (!newFileId) return '';
@@ -5405,7 +5431,7 @@ tr:hover .fm-file-icon-box,
 
         newFolder.setValue('owner', userId);
         newFolder.setValue('parent_folder', destinationParentId);
-        _setIf(newFolder, 'description', sourceFolder.getValue('description') || '');
+        _setIf(newFolder, 'description', (sourceFolder.getValue('description') || '').replace(/\[public\]\s*/ig, '').trim());
         _setIf(newFolder, 'is_deleted', false);
         _setIf(newFolder, 'active', true);
 
@@ -5471,10 +5497,12 @@ tr:hover .fm-file-icon-box,
         if (type === 'file') {
             var item = getRecord(FILE_TABLE, itemId);
             if (!item || isDeleted(item) || !canOwnFile(item)) { data.error = 'Only the file owner can share this file.'; return; }
+            if (isRecordPublic(item)) { data.error = 'Public files are already visible to everyone.'; return; }
             targetField = 'file';
         } else if (type === 'folder') {
             var item2 = getRecord(FOLDER_TABLE, itemId);
             if (!item2 || isDeleted(item2) || !canOwnFolder(item2)) { data.error = 'Only the folder owner can share this folder.'; return; }
+            if (isRecordPublic(item2)) { data.error = 'Public folders are already visible to everyone.'; return; }
             targetField = 'folder';
         } else {
             data.error = 'Invalid item type.';
@@ -5552,29 +5580,14 @@ tr:hover .fm-file-icon-box,
        LOAD WIDGET DATA
     ================================================== */
 
-    function isRecordPublic(gr) {
-        if (!gr) return false;
-        if (gr.isValidField('is_public')) {
-            var v = gr.getValue('is_public');
-            if (v === true || v === 'true' || v === '1' || v === 1) return true;
-        }
-        if (gr.isValidField('access')) {
-            var a = (gr.getValue('access') || '').toLowerCase();
-            if (a === 'public') return true;
-        }
-        var desc = gr.getValue('description') || '';
-        return desc.indexOf('[public]') !== -1;
-    }
-
     function loadData() {
         loadOwnedFolders();
         loadOwnedFiles();
         loadSharedItems();
         loadSharedByMe();
-        loadPublicData();
         loadRecycleBin();
         loadStorage();
-        fillAttachmentIds([data.files, data.sharedFiles, data.publicFiles]);   // ONE query for all attachments
+        fillAttachmentIds([data.files, data.sharedFiles]);   // ONE query for all attachments
         data.loaded = true;
     }
 
@@ -5585,8 +5598,7 @@ tr:hover .fm-file-icon-box,
         folders.orderBy('folder_name');
         folders.query();
         while (folders.next()) {
-            if (isRecordPublic(folders)) continue;
-            addFolderToList(folders, data.folders, false, false);
+            addFolderToList(folders, data.folders, false);   // skips public folders
         }
     }
 
@@ -5597,35 +5609,7 @@ tr:hover .fm-file-icon-box,
         files.orderByDesc('sys_created_on');
         files.query();
         while (files.next()) {
-            if (isRecordPublic(files)) continue;
-            addFileToList(files, data.files, false, false);
-        }
-    }
-
-    function loadPublicData() {
-        data.publicFolders = [];
-        data.publicFiles = [];
-
-        var pubFolders = new GlideRecord(FOLDER_TABLE);
-        pubFolders.addQuery('is_deleted', false);
-        var fqc = pubFolders.addQuery('is_public', true);
-        fqc.addOrCondition('access', 'public');
-        fqc.addOrCondition('description', 'CONTAINS', '[public]');
-        pubFolders.orderBy('folder_name');
-        pubFolders.query();
-        while (pubFolders.next()) {
-            addFolderToList(pubFolders, data.publicFolders, false, true);
-        }
-
-        var pubFiles = new GlideRecord(FILE_TABLE);
-        pubFiles.addQuery('is_deleted', false);
-        var fqc2 = pubFiles.addQuery('is_public', true);
-        fqc2.addOrCondition('access', 'public');
-        fqc2.addOrCondition('description', 'CONTAINS', '[public]');
-        pubFiles.orderByDesc('sys_created_on');
-        pubFiles.query();
-        while (pubFiles.next()) {
-            addFileToList(pubFiles, data.publicFiles, false, true);
+            addFileToList(files, data.files, false);         // skips public files
         }
     }
 
@@ -5673,7 +5657,7 @@ tr:hover .fm-file-icon-box,
         }
     }
 
-    /** Items shared by the current user (recipient, dates, status — and the share id for revoking) */
+    /** Items shared by the current user (recipient, dates, status - and the share id for revoking) */
     function loadSharedByMe() {
         var shares = new GlideRecord(SHARE_TABLE);
         shares.addQuery('shared_by', userId);
@@ -5755,7 +5739,7 @@ tr:hover .fm-file-icon-box,
         }
     }
 
-    /* ---- Recycle Bin ---- */
+    /* ---- Recycle Bin (private items only) ---- */
     function loadRecycleBin() {
         var folders = new GlideRecord(FOLDER_TABLE);
         folders.addQuery('owner', userId);
@@ -5763,6 +5747,7 @@ tr:hover .fm-file-icon-box,
         folders.orderByDesc('sys_updated_on');
         folders.query();
         while (folders.next()) {
+            if (isRecordPublic(folders)) continue;
             data.recycleFolders.push({
                 sys_id:       folders.getUniqueValue(),
                 folder_name:  folders.getValue('folder_name') || folders.getValue('name') || folders.getDisplayValue() || '',
@@ -5777,6 +5762,7 @@ tr:hover .fm-file-icon-box,
         files.orderByDesc('sys_updated_on');
         files.query();
         while (files.next()) {
+            if (isRecordPublic(files)) continue;
             var fn = files.getValue('filename') || files.getValue('file_name') || files.getValue('name') || files.getDisplayValue() || '';
             data.recycleFiles.push({
                 sys_id:         files.getUniqueValue(),
@@ -5790,7 +5776,7 @@ tr:hover .fm-file-icon-box,
         }
     }
 
-    /* ---- Storage Analytics ---- */
+    /* ---- Storage Analytics (private files only) ---- */
     function loadStorage() {
         var fileCount = 0;
         var totalBytes = 0;
@@ -5802,6 +5788,7 @@ tr:hover .fm-file-icon-box,
         files.query();
 
         while (files.next()) {
+            if (isRecordPublic(files)) continue;
             var size = parseInt(files.getValue('file_size'), 10) || 0;
             var ext = (files.getValue('file_extension') || 'unknown').toLowerCase();
             if (!ext) ext = 'unknown';
@@ -5830,21 +5817,20 @@ tr:hover .fm-file-icon-box,
         };
     }
 
-})();
-]]></script>
+})();]]></script>
         <servicenow>false</servicenow>
         <sys_class_name>sp_widget</sys_class_name>
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-04 11:15:08</sys_created_on>
         <sys_id>53595bdec35c5710c05a33bc0501312a</sys_id>
-        <sys_mod_count>116</sys_mod_count>
+        <sys_mod_count>119</sys_mod_count>
         <sys_name>File home</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sp_widget_53595bdec35c5710c05a33bc0501312a</sys_update_name>
         <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-17 17:15:27</sys_updated_on>
+        <sys_updated_on>2026-11-18 12:59:25</sys_updated_on>
         <template><![CDATA[<div class="fm-app" ng-class="{'fm-picker': c.pickerMode}" ng-click="c.closeContextMenu()">
 
   <!-- ================= SIDEBAR ================= -->
@@ -5856,17 +5842,14 @@ tr:hover .fm-file-icon-box,
       <span>My Files</span>
     </div>
 
-    <!-- Privacy / Public Toggle Switch -->
+    <!-- Page switch (Private = this page, Public = separate page) -->
     <div class="fm-privacy-switch">
-      <button type="button" class="fm-privacy-btn" ng-class="{'active': c.privacyFilter == 'private'}"
-        ng-click="c.setPrivacyFilter('private')">
+      <a class="fm-privacy-btn active">
         <i class="fa fa-lock"></i> <span>Private</span>
-      </button>
-      <button type="button" class="fm-privacy-btn public" ng-class="{'active': c.privacyFilter == 'public'}"
-        ng-click="c.setPrivacyFilter('public')">
+      </a>
+      <a class="fm-privacy-btn public" ng-href="{{c.publicPageUrl()}}">
         <i class="fa fa-globe"></i> <span>Public</span>
-        <i class="fa fa-check fm-check-mark" ng-if="c.privacyFilter == 'public'"></i>
-      </button>
+      </a>
     </div>
 
     <!-- hidden folder input (handled in the link function via data-fm-input) -->
@@ -5875,9 +5858,8 @@ tr:hover .fm-file-icon-box,
     </div>
 
     <div class="fm-menu">
-      <div class="fm-menu-label" ng-if="!c.isPublic()">WORKSPACE</div>
-      <div class="fm-menu-label" ng-if="c.isPublic()">PUBLIC WORKSPACE</div>
-      <a ng-if="!c.isPublic()" ng-class="{'active': c.view == 'home' && !c.homeSubView}" ng-click="c.goHome()">
+      <div class="fm-menu-label">WORKSPACE</div>
+      <a ng-class="{'active': c.view == 'home' && !c.homeSubView}" ng-click="c.goHome()">
         <i class="fa fa-home"></i><span>Home</span>
       </a>
       <a ng-class="{'active': c.view == 'allfiles' || (c.view == 'home' && c.homeSubView == 'allfiles')}"
@@ -5890,24 +5872,24 @@ tr:hover .fm-file-icon-box,
         <i class="fa fa-folder"></i><span>Folders</span>
         <span class="fm-count-pill" ng-if="c.rootFolders().length">{{c.rootFolders().length}}</span>
       </a>
-      <a ng-if="!c.isPublic()" ng-class="{'active': c.view == 'shared' || (c.view == 'home' && c.homeSubView == 'shared')}"
+      <a ng-class="{'active': c.view == 'shared' || (c.view == 'home' && c.homeSubView == 'shared')}"
         ng-click="c.setView('shared')">
         <i class="fa fa-users"></i><span>Shared</span>
         <span class="fm-count-pill" ng-if="c.sharedCount()">{{c.sharedCount()}}</span>
       </a>
 
-      <div class="fm-menu-label fm-menu-spaced" ng-if="!c.isPublic()">MANAGE</div>
-      <a ng-if="!c.isPublic()" ng-class="{'active': c.view == 'recycle' || (c.view == 'home' && c.homeSubView == 'recycle')}"
+      <div class="fm-menu-label fm-menu-spaced">MANAGE</div>
+      <a ng-class="{'active': c.view == 'recycle' || (c.view == 'home' && c.homeSubView == 'recycle')}"
         ng-click="c.setView('recycle')">
         <i class="fa fa-trash-o"></i><span>Recycle Bin</span>
         <span class="fm-badge" ng-if="c.recycleCount() > 0">{{c.recycleCount()}}</span>
       </a>
-      <a ng-if="!c.isPublic()" ng-class="{'active': c.view == 'storage'}" ng-click="c.setView('storage')">
+      <a ng-class="{'active': c.view == 'storage'}" ng-click="c.setView('storage')">
         <i class="fa fa-database"></i><span>Storage</span>
       </a>
 
       <!-- Storage Progress Gauge in Sidebar -->
-      <div class="fm-sidebar-storage" ng-if="!c.isPublic()" ng-click="c.setView('storage')" title="View Storage Details">
+      <div class="fm-sidebar-storage" ng-click="c.setView('storage')" title="View Storage Details">
         <div class="fm-storage-bar-track">
           <div class="fm-storage-bar-fill" ng-style="{'width': c.sidebarStoragePct() + '%'}"></div>
         </div>
@@ -5952,8 +5934,8 @@ tr:hover .fm-file-icon-box,
     <header class="fm-header">
       <div class="fm-header-title">
         <h2 ng-if="c.view == 'home'">Home</h2>
-        <h2 ng-if="c.view == 'allfiles'">{{c.isPublic() ? 'Public Files' : 'All Files'}}</h2>
-        <h2 ng-if="c.view == 'folders'">{{c.isPublic() ? 'Public Folders' : 'My Folders'}}</h2>
+        <h2 ng-if="c.view == 'allfiles'">All Files</h2>
+        <h2 ng-if="c.view == 'folders'">My Folders</h2>
         <h2 ng-if="c.view == 'files'">{{c.currentFolderName}}</h2>
         <h2 ng-if="c.view == 'shared'">Shared</h2>
         <h2 ng-if="c.view == 'recycle'">Recycle Bin</h2>
@@ -5964,17 +5946,11 @@ tr:hover .fm-file-icon-box,
         <!-- Modern Pill Search -->
         <div class="fm-search-pill">
           <i class="fa fa-search"></i>
-          <input type="text" id="fmSearch" ng-model="c.searchText" placeholder="Search files and folders...">
+          <input type="text" id="fmSearch" ng-model="c.searchText" placeholder="Search by file name, nickname or folder...">
           <button type="button" class="fm-search-clear" ng-if="c.searchText" ng-click="c.searchText = ''"><i
               class="fa fa-times"></i></button>
           <span class="fm-shortcut-badge" ng-if="!c.searchText">Ctrl + K</span>
         </div>
-
-        <!-- Notification Bell -->
-        <!-- <button type="button" class="fm-icon-circle-btn" title="Notifications">
-          <i class="fa fa-bell-o"></i>
-          <span class="fm-notif-dot"></span>
-        </button> -->
 
         <!-- User Profile Avatar -->
         <div class="fm-user-avatar-btn" title="{{c.data.user_name || 'User'}}">
@@ -6029,28 +6005,23 @@ tr:hover .fm-file-icon-box,
           <p>Organise, access and share your files easily</p>
         </div>
         <div class="fm-hero-graphic">
-          <!-- 3D Style Vector Art: Folders, Cloud with Arrow, Leaves -->
           <svg viewBox="0 0 240 110" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <!-- Leaves / Nature Accents -->
             <path d="M195 24C198 12 210 10 216 16C218 24 208 30 195 24Z" fill="#34d399" opacity="0.9" />
             <path d="M208 32C216 26 226 28 228 36C227 44 216 43 208 32Z" fill="#10b981" opacity="0.8" />
             <path d="M192 38C185 30 185 20 193 18C201 19 200 30 192 38Z" fill="#6ee7b7" opacity="0.9" />
             <path d="M198 22L206 50" stroke="#059669" stroke-width="2" stroke-linecap="round" />
 
-            <!-- Floating Document Cards -->
             <rect x="50" y="24" width="60" height="46" rx="8" fill="#f8fafc" opacity="0.7" />
             <rect x="58" y="32" width="28" height="4" rx="2" fill="#cbd5e1" />
             <rect x="58" y="40" width="40" height="4" rx="2" fill="#e2e8f0" />
             <circle cx="96" cy="34" r="5" fill="#f59e0b" opacity="0.8" />
 
-            <!-- 3D Yellow/Orange Folder -->
             <rect x="70" y="32" width="68" height="52" rx="10" fill="url(#yellowFolderGrad)"
               filter="drop-shadow(0 6px 12px rgba(245,158,11,0.25))" />
             <path
               d="M70 42C70 37 74 33 79 33H95L102 39H130C134.4 39 138 42.6 138 47V76C138 80.4 134.4 84 130 84H78C73.6 84 70 80.4 70 76V42Z"
               fill="url(#folderFrontGrad)" />
 
-            <!-- Floating 3D Cloud with Upload Arrow -->
             <g filter="drop-shadow(0 10px 20px rgba(2,132,199,0.3))">
               <path
                 d="M142 80C132 80 124 73 124 63C124 55 130 48 139 47C142 34 153 25 166 25C178 25 188 33 192 44C195 43.5 198 43 201 43C212 43 220 51 220 62C220 72 212 80 201 80H142Z"
@@ -6154,7 +6125,7 @@ tr:hover .fm-file-icon-box,
         </div>
       </div>
 
-      <!-- Recent Files Section (Matches Image Layout Exactly) -->
+      <!-- Recent Files Section -->
       <div class="fm-recent-section" ng-if="!c.homeSubView">
         <div class="fm-recent-header-bar">
           <div class="fm-recent-title">
@@ -6173,7 +6144,7 @@ tr:hover .fm-file-icon-box,
           </div>
         </div>
 
-        <!-- LIST VIEW (Default Table matching image: Name, Size, Modified, Actions - NO Access column) -->
+        <!-- LIST VIEW -->
         <div class="fm-table-card" ng-if="c.viewMode != 'grid' && c.recentFiles().length">
           <table class="fm-table">
             <thead>
@@ -6192,7 +6163,7 @@ tr:hover .fm-file-icon-box,
                     <div class="fm-file-icon-box" ng-class="c.getFileIconColor(file)">
                       <i class="{{c.getFileIcon(file)}}"></i>
                     </div>
-                    <span class="fm-file-title" title="{{file.filename}}">{{file.filename}}</span>
+                    <div class="fm-file-name-wrap"><span class="fm-file-title" title="{{file.filename}}">{{file.filename}}</span><span class="fm-nick" ng-if="file.nickname"><i class="fa fa-tag"></i> {{file.nickname}}</span></div>
                   </div>
                 </td>
                 <td class="fm-text-muted">{{c.formatBytes(file.file_size)}}</td>
@@ -6217,7 +6188,7 @@ tr:hover .fm-file-icon-box,
               <i class="{{c.getFileIcon(file)}}"></i>
             </div>
             <div class="fm-file-card-info">
-              <strong title="{{file.filename}}">{{file.filename}}</strong>
+              <strong title="{{file.filename}}">{{file.nickname ? file.nickname + ' · ' : ''}}{{file.filename}}</strong>
               <span>{{c.formatBytes(file.file_size)}} · {{file.created_date}}</span>
             </div>
             <button type="button" class="fm-more-btn" title="More actions"
@@ -6230,7 +6201,7 @@ tr:hover .fm-file-icon-box,
         <div class="fm-empty" ng-if="!c.recentFiles().length">
           <i class="fa fa-file-o"></i>
           <p>No recent files.</p>
-          <button type="button" class="fm-button fm-primary" ng-if="c.canCreate()" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
+          <button type="button" class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
         </div>
       </div>
     </section>
@@ -6255,11 +6226,11 @@ tr:hover .fm-file-icon-box,
             <button type="button" class="fm-view-btn" ng-class="{'active': c.viewMode == 'list'}"
               ng-click="c.setViewMode('list')" title="List view"><i class="fa fa-bars"></i></button>
           </div>
-          <button type="button" class="fm-button fm-primary" ng-if="c.canCreate()" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
+          <button type="button" class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
         </div>
       </div>
 
-      <!-- TABLE (NO ACCESS COLUMN) -->
+      <!-- TABLE -->
       <div class="fm-table-card" ng-if="c.page('allFiles').total && c.viewMode != 'grid'">
         <table class="fm-table">
           <thead>
@@ -6286,14 +6257,14 @@ tr:hover .fm-file-icon-box,
                   <div class="fm-file-icon-box" ng-class="c.getFileIconColor(file)">
                     <i class="{{c.getFileIcon(file)}}"></i>
                   </div>
-                  <span class="fm-file-title" title="{{file.filename}}">{{file.filename}}</span>
+                  <div class="fm-file-name-wrap"><span class="fm-file-title" title="{{file.filename}}">{{file.filename}}</span><span class="fm-nick" ng-if="file.nickname"><i class="fa fa-tag"></i> {{file.nickname}}</span></div>
                 </div>
               </td>
               <td>
                 <span class="fm-folder-chip" ng-class="'fm-chip-' + c.getFolderColor(file.folder, file)"
                   ng-if="c.getFolderName(file.folder, file)"
                   ng-click="$event.stopPropagation(); c.openFolderById(file.folder)">
-                  <i class="fa fa-folder" ng-class="'fm-color-text-' + (folder.color || 'orange')"></i>
+                  <i class="fa fa-folder"></i>
                   {{c.getFolderName(file.folder, file)}}
                 </span>
                 <span ng-if="!c.getFolderName(file.folder, file)" class="fm-text-muted">—</span>
@@ -6318,7 +6289,7 @@ tr:hover .fm-file-icon-box,
             <i class="{{c.getFileIcon(file)}}"></i>
           </div>
           <div class="fm-file-card-info">
-            <strong title="{{file.filename}}">{{file.filename}}</strong>
+            <strong title="{{file.filename}}">{{file.nickname ? file.nickname + ' · ' : ''}}{{file.filename}}</strong>
             <span>{{c.formatBytes(file.file_size)}} · {{file.created_date}}</span>
           </div>
           <button type="button" class="fm-more-btn" ng-click="c.openMenuFromButton($event, file, 'file')"><i
@@ -6343,7 +6314,7 @@ tr:hover .fm-file-icon-box,
       <div class="fm-empty" ng-if="!c.page('allFiles').total">
         <i class="fa fa-file-o"></i>
         <p>{{c.searchText ? 'No files match your search.' : 'No files found.'}}</p>
-        <button type="button" class="fm-button fm-primary" ng-if="c.canCreate()" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
+        <button type="button" class="fm-button fm-primary" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
       </div>
     </section>
 
@@ -6359,9 +6330,9 @@ tr:hover .fm-file-icon-box,
             <option value="-folder_name">Name Z–A</option>
             <option value="-sys_created_on">Newest first</option>
           </select>
-          <button type="button" class="fm-button" ng-if="c.canCreate()" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
-          <button type="button" class="fm-button" ng-if="c.canCreate()" ng-click="c.triggerFolderUpload()"><i class="fa fa-folder-open"></i> Upload Folder</button>
-          <button type="button" class="fm-button fm-primary" ng-if="c.canCreate()" ng-click="c.openFolderModal()"><i class="fa fa-plus"></i> New Folder</button>
+          <button type="button" class="fm-button" ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
+          <button type="button" class="fm-button" ng-click="c.triggerFolderUpload()"><i class="fa fa-folder-open"></i> Upload Folder</button>
+          <button type="button" class="fm-button fm-primary" ng-click="c.openFolderModal()"><i class="fa fa-plus"></i> New Folder</button>
         </div>
       </div>
 
@@ -6390,8 +6361,8 @@ tr:hover .fm-file-icon-box,
 
       <div class="fm-empty" ng-if="!c.page('rootFolders').total">
         <i class="fa fa-folder-open"></i>
-        <p>{{c.searchText ? 'No folders match your search.' : (c.isPublic() ? 'No public folders available.' : 'No folders available.')}}</p>
-        <button type="button" class="fm-button fm-primary" ng-if="c.canCreate()" ng-click="c.openFolderModal()">Create Folder</button>
+        <p>{{c.searchText ? 'No folders match your search.' : 'No folders available.'}}</p>
+        <button type="button" class="fm-button fm-primary" ng-click="c.openFolderModal()">Create Folder</button>
       </div>
     </section>
 
@@ -6403,10 +6374,10 @@ tr:hover .fm-file-icon-box,
             {{c.backLabel()}}</button>
           <p>Files and subfolders in this folder.</p>
         </div>
-        <div class="fm-toolbar-actions" ng-if="c.currentFolderCanEdit() && c.canCreate()">
+        <div class="fm-toolbar-actions" ng-if="c.currentFolderCanEdit()">
           <button type="button" class="fm-button" ng-click="c.openFolderModal()"><i class="fa fa-plus"></i> New
             Subfolder</button>
-          <button type="button" class="fm-button" ng-if="c.canCreate()" ng-click="c.triggerFolderUpload()"><i class="fa fa-folder-open"></i> Upload Folder</button>
+          <button type="button" class="fm-button" ng-click="c.triggerFolderUpload()"><i class="fa fa-folder-open"></i> Upload Folder</button>
           <label class="fm-button fm-primary" ng-class="{'fm-disabled': c.uploading}">
             <i class="fa fa-upload"></i> {{c.uploading ? 'Uploading...' : 'Upload Files'}}
             <input type="file" multiple data-fm-input="direct"
@@ -6415,7 +6386,7 @@ tr:hover .fm-file-icon-box,
         </div>
       </div>
 
-      <div class="fm-drop-zone" fm-drop-zone ng-if="c.currentFolderCanEdit() && c.canCreate() && !c.pickerMode"
+      <div class="fm-drop-zone" fm-drop-zone ng-if="c.currentFolderCanEdit() && !c.pickerMode"
         ng-class="{'fm-drag-over': c.dragOver}">
         <i class="fa fa-cloud-upload"></i>
         <span>Drag &amp; drop files here to upload to <strong>{{c.currentFolderName}}</strong></span>
@@ -6447,7 +6418,7 @@ tr:hover .fm-file-icon-box,
         <div ng-include="'fm-pager.html'" onload="pgKey='childFolders'"></div>
       </div>
 
-      <!-- Files inside folder (NO ACCESS COLUMN) -->
+      <!-- Files inside folder -->
       <div class="fm-subsection">
         <div class="fm-recent-header-bar">
           <h4>Files</h4>
@@ -6484,7 +6455,7 @@ tr:hover .fm-file-icon-box,
                     <div class="fm-file-icon-box" ng-class="c.getFileIconColor(file)">
                       <i class="{{c.getFileIcon(file)}}"></i>
                     </div>
-                    <span class="fm-file-title" title="{{file.filename}}">{{file.filename}}</span>
+                    <div class="fm-file-name-wrap"><span class="fm-file-title" title="{{file.filename}}">{{file.filename}}</span><span class="fm-nick" ng-if="file.nickname"><i class="fa fa-tag"></i> {{file.nickname}}</span></div>
                   </div>
                 </td>
                 <td class="fm-text-muted">{{c.formatBytes(file.file_size)}}</td>
@@ -6507,7 +6478,7 @@ tr:hover .fm-file-icon-box,
               <i class="{{c.getFileIcon(file)}}"></i>
             </div>
             <div class="fm-file-card-info">
-              <strong title="{{file.filename}}">{{file.filename}}</strong>
+              <strong title="{{file.filename}}">{{file.nickname ? file.nickname + ' · ' : ''}}{{file.filename}}</strong>
               <span>{{c.formatBytes(file.file_size)}} · {{file.created_date}}</span>
             </div>
             <button type="button" class="fm-more-btn" ng-click="c.openMenuFromButton($event, file, 'file')"><i
@@ -6580,7 +6551,6 @@ tr:hover .fm-file-icon-box,
 
         <div class="fm-subsection">
           <h4>Shared Files</h4>
-          <!-- TABLE WITHOUT ACCESS COLUMN -->
           <div class="fm-table-card" ng-if="c.page('sharedFiles').total">
             <table class="fm-table">
               <thead>
@@ -6604,7 +6574,7 @@ tr:hover .fm-file-icon-box,
                       <div class="fm-file-icon-box" ng-class="c.getFileIconColor(file)">
                         <i class="{{c.getFileIcon(file)}}"></i>
                       </div>
-                      <span class="fm-file-title" title="{{file.filename}}">{{file.filename}}</span>
+                      <div class="fm-file-name-wrap"><span class="fm-file-title" title="{{file.filename}}">{{file.filename}}</span><span class="fm-nick" ng-if="file.nickname"><i class="fa fa-tag"></i> {{file.nickname}}</span></div>
                     </div>
                   </td>
                   <td class="fm-text-muted">{{c.formatBytes(file.file_size)}}</td>
@@ -6781,7 +6751,7 @@ tr:hover .fm-file-icon-box,
         <div class="fm-storage-icon"><i class="fa fa-database"></i></div>
         <div>
           <h3>Your File Storage</h3>
-          <p>Summary of active files owned by you.</p>
+          <p>Summary of active private files owned by you.</p>
         </div>
       </div>
       <div class="fm-stats" style="grid-template-columns: repeat(2, minmax(0,1fr));">
@@ -6827,8 +6797,8 @@ tr:hover .fm-file-icon-box,
           </table>
         </div>
       </div>
-      <p class="fm-storage-note">This is the total size of your active File Manager records. Standard storage allocation
-        is 5 GB.</p>
+      <p class="fm-storage-note">This is the total size of your active private File Manager records. Standard storage
+        allocation is 5 GB.</p>
     </section>
   </main>
 
@@ -6862,6 +6832,25 @@ tr:hover .fm-file-icon-box,
             style="position:absolute; opacity:0; width:0; height:0; pointer-events:none;"
             ng-disabled="!c.targetUploadFolder || c.uploading">
         </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Nickname for XML uploads -->
+  <div class="fm-modal-backdrop" ng-if="c.showNicknameModal" ng-click="c.cancelNicknameUpload()">
+    <div class="fm-modal fm-share-modal" ng-click="$event.stopPropagation()">
+      <div class="fm-modal-header">
+        <h3>Add Nicknames</h3><button type="button" ng-click="c.cancelNicknameUpload()">&times;</button>
+      </div>
+      <p class="fm-modal-hint">Give each XML file a short nickname so you can find it later with search. Nicknames are optional.</p>
+      <div class="fm-form-group" ng-repeat="it in c.pendingItems | filter:{isXml:true}">
+        <label><i class="fa fa-file-code-o"></i> {{it.file.name}}</label>
+        <input type="text" ng-model="it.nickname" maxlength="50" placeholder="Nickname (optional), e.g. Sprint 12 update set">
+      </div>
+      <p class="fm-search-help" ng-if="c.pendingOtherCount()">+ {{c.pendingOtherCount()}} other file(s) will be uploaded without a nickname.</p>
+      <div class="fm-modal-actions">
+        <button type="button" class="fm-button" ng-click="c.cancelNicknameUpload()">Cancel</button>
+        <button type="button" class="fm-button fm-primary" ng-click="c.confirmNicknameUpload()"><i class="fa fa-upload"></i> Upload</button>
       </div>
     </div>
   </div>
@@ -7060,12 +7049,14 @@ tr:hover .fm-file-icon-box,
   <div class="fm-modal-backdrop" ng-if="c.showEditFileModal" ng-click="c.showEditFileModal = false">
     <div class="fm-modal" ng-click="$event.stopPropagation()">
       <div class="fm-modal-header">
-        <h3>Edit Description</h3><button type="button" ng-click="c.showEditFileModal = false">&times;</button>
+        <h3>Edit Details</h3><button type="button" ng-click="c.showEditFileModal = false">&times;</button>
       </div>
       <div class="fm-alert fm-alert-error" ng-if="c.error"><i
           class="fa fa-exclamation-circle"></i><span>{{c.error}}</span></div>
       <div class="fm-share-target"><i class="fa fa-file-o"
           style="color:#0284c7;"></i><strong>{{c.editFileTarget.filename}}</strong></div>
+      <label>Nickname <span class="fm-optional">(Optional)</span></label>
+      <input type="text" ng-model="c.editFileNickname" maxlength="50" placeholder="e.g. Sprint 12 update set" style="margin-bottom:14px;">
       <label>Description</label>
       <textarea rows="4" maxlength="1000" ng-model="c.editFileDescription"
         placeholder="Add a description for this file"></textarea>
@@ -7117,7 +7108,7 @@ tr:hover .fm-file-icon-box,
     </div>
   </div>
 
-  <!-- Modern Floating Context Menu (Matching Screenshot) -->
+  <!-- Floating Context Menu -->
   <div class="fm-context-menu" ng-if="c.contextMenu.show"
     ng-style="{'top': c.contextMenu.y + 'px', 'left': c.contextMenu.x + 'px'}" ng-click="$event.stopPropagation()">
     <div ng-if="c.contextMenu.type == 'file'">
@@ -7125,26 +7116,26 @@ tr:hover .fm-file-icon-box,
         ng-click="c.preview(c.contextMenu.item); c.closeContextMenu()">
         <i class="fa fa-eye"></i> Preview
       </div>
-      <div class="fm-context-item" ng-if="!c.isPublic() && c.contextMenu.item.permission == 'Owner'"
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'"
         ng-click="c.openShare(c.contextMenu.item, 'file'); c.closeContextMenu()">
         <i class="fa fa-share-alt"></i> Share
       </div>
       <div class="fm-context-item" ng-click="c.downloadFile(c.contextMenu.item); c.closeContextMenu()">
         <i class="fa fa-download"></i> Download
       </div>
-      <div class="fm-context-item" ng-if="c.canCreate() && c.contextMenu.item.permission == 'Owner'"
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'"
         ng-click="c.openRenameFile(c.contextMenu.item); c.closeContextMenu()">
         <i class="fa fa-pencil"></i> Rename
       </div>
       <div class="fm-context-item" ng-click="c.openAddToFolder(c.contextMenu.item, 'file')">
         <i class="fa fa-clone"></i> Make a copy
       </div>
-      <div class="fm-context-item" ng-if="c.canCreate() && c.contextMenu.item.can_edit"
+      <div class="fm-context-item" ng-if="c.contextMenu.item.can_edit"
         ng-click="c.openEditFile(c.contextMenu.item); c.closeContextMenu()">
-        <i class="fa fa-file-text-o"></i> Edit Description
+        <i class="fa fa-file-text-o"></i> Edit Details (nickname)
       </div>
       <div class="fm-context-divider" ng-if="c.contextMenu.item.permission == 'Owner'"></div>
-      <div class="fm-context-item danger" ng-if="c.canCreate() && c.contextMenu.item.permission == 'Owner'"
+      <div class="fm-context-item danger" ng-if="c.contextMenu.item.permission == 'Owner'"
         ng-click="c.confirmDeleteFile(c.contextMenu.item); c.closeContextMenu()">
         <i class="fa fa-trash-o"></i> Move to Recycle Bin
       </div>
@@ -7157,16 +7148,16 @@ tr:hover .fm-file-icon-box,
       <div class="fm-context-item" ng-click="c.openAddToFolder(c.contextMenu.item, 'folder')">
         <i class="fa fa-clone"></i> Make a copy
       </div>
-      <div class="fm-context-item" ng-if="c.canCreate() && c.contextMenu.item.permission == 'Owner'"
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'"
         ng-click="c.openRenameFolder(c.contextMenu.item); c.closeContextMenu()">
         <i class="fa fa-pencil"></i> Rename
       </div>
-      <div class="fm-context-item" ng-if="!c.isPublic() && c.contextMenu.item.permission == 'Owner'"
+      <div class="fm-context-item" ng-if="c.contextMenu.item.permission == 'Owner'"
         ng-click="c.openShare(c.contextMenu.item, 'folder'); c.closeContextMenu()">
         <i class="fa fa-share-alt"></i> Share
       </div>
       <div class="fm-context-divider" ng-if="c.contextMenu.item.permission == 'Owner'"></div>
-      <div class="fm-context-item danger" ng-if="c.canCreate() && c.contextMenu.item.permission == 'Owner'"
+      <div class="fm-context-item danger" ng-if="c.contextMenu.item.permission == 'Owner'"
         ng-click="c.confirmDeleteFolder(c.contextMenu.item); c.closeContextMenu()">
         <i class="fa fa-trash-o"></i> Move to Recycle Bin
       </div>
