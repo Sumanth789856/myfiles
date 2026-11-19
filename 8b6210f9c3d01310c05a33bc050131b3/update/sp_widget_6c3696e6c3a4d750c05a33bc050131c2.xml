@@ -12,7 +12,9 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
         else $scope.$apply(fn);
     }
 
-    /* De-duplicated event dispatcher for file selections */
+    /* De-duplicated event dispatcher for file selections.
+       EVERY file-input path (inline onchange, global listener, link function) goes through this,
+       so one selection can never start two uploads. */
     var _lastSelectedTs = 0;
     function _dispatchSelected(kind, files) {
         var now = Date.now();
@@ -24,6 +26,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
             else if (kind === 'picker') c.onPickerFilesSelected(files);
         });
     }
+    c.dispatchSelected = _dispatchSelected;
 
     /* Global bridges for native DOM file inputs - immune to AngularJS debugInfoEnabled(false) */
     window.__fmPublicPickerSelected = function (input) {
@@ -83,6 +86,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
     c.currentFolderName = '';
     c.searchText = '';
     c.loading = false;
+    c.syncing = false;
     c.breadcrumb = [];
 
     c.folderSort = 'folder_name';
@@ -466,6 +470,15 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
         });
     };
 
+    /* Re-sync every public file/folder with the Public Items table (create missing, fix titles, clean duplicates) */
+    c.syncPublicItems = function () {
+        if (c.syncing || !c.canCreate()) return;
+        c.syncing = true;
+        c.runAction('sync_public_items').then(function () {
+            c.syncing = false;
+        });
+    };
+
     var _msgTimer;
     $scope.$watch(function () { return c.message; }, function (v) {
         if (_msgTimer) $timeout.cancel(_msgTimer);
@@ -698,7 +711,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
         if (!items.length) return;
         if (c.uploading) { c.error = 'An upload is already in progress. Please wait.'; return; }
 
-        var total = items.length, index = 0, failed = [], lastError = '';
+        var total = items.length, index = 0, failed = [], lastError = '', syncWarning = '';
         c.uploading = true;
         c.uploadProgress = 0; c.uploadIndex = 0; c.uploadTotal = total; c.uploadCurrentName = '';
         _clearAlerts();
@@ -710,6 +723,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
                     c.error = (lastError ? lastError + ' ' : '') + 'Failed to upload: ' + failed.join(', ');
                 } else {
                     c.message = total === 1 ? '"' + items[0].file.name + '" uploaded successfully.' : total + ' files uploaded successfully.';
+                    if (syncWarning) c.error = syncWarning;
                 }
             });
         }
@@ -723,7 +737,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
             c.uploadCurrentName = file.name;
             c.uploadProgress = Math.round(((index - 1) / total) * 100);
 
-            // 1. Create file record with metadata (GET query string is small and clean)
+            // 1. Create file record + its Public Items record (server rolls back if the Public Items record fails)
             c.runAction('create_file', {
                 filename: file.name,
                 extension: ext,
@@ -745,15 +759,17 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
                     if (err) {
                         lastError = err;
                         failed.push(file.name);
-                        next();
+                        // no binary was stored - remove the empty file record and its Public Items record
+                        c.runAction('discard_file', { sys_id: result.file_sys_id, skip_load: '1' }).then(function () { next(); }, function () { next(); });
                     } else {
                         c.uploadProgress = Math.round((index / total) * 100);
-                        // 3. Immediately sync and copy attachment to x_1830514_fm_public_items
+                        // 3. Copy the attachment onto the Public Items record
                         c.runAction('sync_public_attachment', {
                             file_sys_id: result.file_sys_id,
                             public_item_sys_id: result.public_item_sys_id || '',
                             skip_load: '1'
-                        }).then(function () {
+                        }).then(function (r) {
+                            if (r && r.error) syncWarning = r.error;
                             next();
                         }, function () {
                             next();
@@ -1241,33 +1257,17 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
         $scope.$on('$destroy', function () { window.removeEventListener('popstate', _onPopState); });
     }
 
-    /* Fallback listener binding if script is pasted directly into Client Controller without Link Function */
+    /* Clear the file input value on click so selecting the same file twice still fires "change".
+       (File selection itself is handled ONLY by the de-duplicated dispatcher above.) */
     $timeout(function () {
         var root = (typeof $element !== 'undefined' && $element && $element[0]) || document.querySelector('.fm-app') || document;
         if (!root || root.__fmCtrlBound) return;
         root.__fmCtrlBound = true;
-
         root.addEventListener('click', function (e) {
             var t = e.target;
             if (t && t.getAttribute && t.getAttribute('data-fm-input')) {
                 try { t.value = ''; } catch (ex) { }
             }
-        });
-
-        root.addEventListener('change', function (e) {
-            var t = e.target;
-            var kind = t && t.getAttribute && t.getAttribute('data-fm-input');
-            if (!kind) return;
-            var files = [];
-            if (t.files) {
-                for (var i = 0; i < t.files.length; i++) files.push(t.files[i]);
-            }
-            if (!files.length) return;
-            $timeout(function () {
-                if (kind === 'folder') c.onFolderUploadSelected(files);
-                else if (kind === 'direct') c.onDirectFilesSelected(files);
-                else if (kind === 'picker') c.onPickerFilesSelected(files);
-            });
         });
     }, 100);
 };
@@ -1275,118 +1275,7 @@ api.controller = function ($scope, $http, $timeout, $location, $filter, $templat
 /* =====================================================
    LINK FUNCTION
 ===================================================== */
-api.link = function ($scope, element) {
-    var rootEl = element[0];
-
-    function safeApply(fn) {
-        if ($scope.$$phase || ($scope.$root && $scope.$root.$$phase)) { if (fn) fn(); }
-        else $scope.$apply(fn);
-    }
-
-    /* File inputs */
-    rootEl.addEventListener('click', function (e) {
-        var t = e.target;
-        if (t && t.getAttribute && t.getAttribute('data-fm-input')) {
-            try { t.value = ''; } catch (ex) { }
-        }
-    });
-
-    rootEl.addEventListener('change', function (e) {
-        var t = e.target;
-        var kind = t && t.getAttribute && t.getAttribute('data-fm-input');
-        if (!kind) return;
-        var files = [];
-        if (t.files) {
-            for (var i = 0; i < t.files.length; i++) {
-                files.push(t.files[i]);
-            }
-        }
-        if (!files.length) return;
-        safeApply(function () {
-            var c = $scope.c;
-            if (kind === 'folder') c.onFolderUploadSelected(files);
-            else if (kind === 'direct') c.onDirectFilesSelected(files);
-            else if (kind === 'picker') c.onPickerFilesSelected(files);
-        });
-    });
-
-    /* Right-click */
-    rootEl.addEventListener('contextmenu', function (ev) {
-        var target = ev.target.closest('[fm-context-id]');
-        if (!target) return;
-        ev.preventDefault();
-        var type = target.getAttribute('fm-context-type'), id = target.getAttribute('fm-context-id');
-        safeApply(function () {
-            var item = $scope.c.findItem(type, id);
-            if (item) $scope.c.openContextMenu(ev, item, type);
-        });
-    });
-
-    /* Drag & drop */
-    function hasFiles(e) {
-        var types = e.dataTransfer && e.dataTransfer.types;
-        if (!types) return false;
-        for (var i = 0; i < types.length; i++) if (types[i] === 'Files') return true;
-        return false;
-    }
-    function prevent(e) { e.preventDefault(); e.stopPropagation(); }
-    function dropFolderOf(e) {
-        var el = e.target.closest && e.target.closest('[fm-drop-folder]');
-        return (el && el.getAttribute('fm-drop-folder')) ? el : null;
-    }
-
-    rootEl.addEventListener('dragover', function (e) {
-        if (!hasFiles(e)) return;
-        var zone = e.target.closest('[fm-drop-zone]'), card = dropFolderOf(e);
-        e.preventDefault();
-        if (zone || card) {
-            e.stopPropagation();
-            e.dataTransfer.dropEffect = 'copy';
-            if (zone) safeApply(function () { $scope.c.dragOver = true; });
-            if (card) card.classList.add('fm-drag-over');
-        }
-    });
-    rootEl.addEventListener('dragleave', function (e) {
-        var zone = e.target.closest('[fm-drop-zone]');
-        if (zone && !zone.contains(e.relatedTarget)) safeApply(function () { $scope.c.dragOver = false; });
-        var card = dropFolderOf(e);
-        if (card && !card.contains(e.relatedTarget)) card.classList.remove('fm-drag-over');
-    });
-    rootEl.addEventListener('drop', function (e) {
-        if (!hasFiles(e)) return;
-        e.preventDefault();
-        var zone = e.target.closest('[fm-drop-zone]'), card = dropFolderOf(e);
-        var files = e.dataTransfer && e.dataTransfer.files;
-        if (card) {
-            prevent(e);
-            card.classList.remove('fm-drag-over');
-            var folderId = card.getAttribute('fm-drop-folder');
-            if (files && files.length) safeApply(function () { $scope.c.uploadToFolder(files, folderId); });
-        } else if (zone) {
-            prevent(e);
-            safeApply(function () { $scope.c.dragOver = false; });
-            if (files && files.length && $scope.c.currentFolder && $scope.c.currentFolderCanEdit()) {
-                safeApply(function () { $scope.c.onDirectFilesSelected(files); });
-            }
-        }
-    });
-
-    /* Keyboard */
-    function onDocKey(e) { if ($scope.c) safeApply(function () { $scope.c.onKeyDown(e); }); }
-    document.addEventListener('keydown', onDocKey);
-
-    function closeMenuOnScroll() {
-        if ($scope.c && $scope.c.contextMenu && $scope.c.contextMenu.show) safeApply(function () { $scope.c.closeContextMenu(); });
-    }
-    window.addEventListener('scroll', closeMenuOnScroll, true);
-    window.addEventListener('resize', closeMenuOnScroll);
-
-    $scope.$on('$destroy', function () {
-        document.removeEventListener('keydown', onDocKey);
-        window.removeEventListener('scroll', closeMenuOnScroll, true);
-        window.removeEventListener('resize', closeMenuOnScroll);
-    });
-};]]></client_script>
+]]></client_script>
         <controller_as>c</controller_as>
         <css>/* =========================================================
    FILE MANAGER - LIGHT PROFESSIONAL THEME (BLUE)
@@ -3104,9 +2993,114 @@ tr:hover .fm-file-icon-box,
         <has_preview>true</has_preview>
         <id>public_files</id>
         <internal>false</internal>
-        <link><![CDATA[function link(scope, element, attrs, controller) {
-  
-}]]></link>
+        <link><![CDATA[api.link = function ($scope, element) {
+    var rootEl = element[0];
+
+    function safeApply(fn) {
+        if ($scope.$$phase || ($scope.$root && $scope.$root.$$phase)) { if (fn) fn(); }
+        else $scope.$apply(fn);
+    }
+
+    /* File inputs - clear value on click; route "change" through the controller's de-duplicated dispatcher */
+    rootEl.addEventListener('click', function (e) {
+        var t = e.target;
+        if (t && t.getAttribute && t.getAttribute('data-fm-input')) {
+            try { t.value = ''; } catch (ex) { }
+        }
+    });
+
+    rootEl.addEventListener('change', function (e) {
+        var t = e.target;
+        var kind = t && t.getAttribute && t.getAttribute('data-fm-input');
+        if (!kind) return;
+        var files = [];
+        if (t.files) {
+            for (var i = 0; i < t.files.length; i++) {
+                files.push(t.files[i]);
+            }
+        }
+        if (!files.length) return;
+        var c = $scope.c;
+        if (c && c.dispatchSelected) c.dispatchSelected(kind, files);
+    });
+
+    /* Right-click */
+    rootEl.addEventListener('contextmenu', function (ev) {
+        var target = ev.target.closest('[fm-context-id]');
+        if (!target) return;
+        ev.preventDefault();
+        var type = target.getAttribute('fm-context-type'), id = target.getAttribute('fm-context-id');
+        safeApply(function () {
+            var item = $scope.c.findItem(type, id);
+            if (item) $scope.c.openContextMenu(ev, item, type);
+        });
+    });
+
+    /* Drag & drop */
+    function hasFiles(e) {
+        var types = e.dataTransfer && e.dataTransfer.types;
+        if (!types) return false;
+        for (var i = 0; i < types.length; i++) if (types[i] === 'Files') return true;
+        return false;
+    }
+    function prevent(e) { e.preventDefault(); e.stopPropagation(); }
+    function dropFolderOf(e) {
+        var el = e.target.closest && e.target.closest('[fm-drop-folder]');
+        return (el && el.getAttribute('fm-drop-folder')) ? el : null;
+    }
+
+    rootEl.addEventListener('dragover', function (e) {
+        if (!hasFiles(e)) return;
+        var zone = e.target.closest('[fm-drop-zone]'), card = dropFolderOf(e);
+        e.preventDefault();
+        if (zone || card) {
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'copy';
+            if (zone) safeApply(function () { $scope.c.dragOver = true; });
+            if (card) card.classList.add('fm-drag-over');
+        }
+    });
+    rootEl.addEventListener('dragleave', function (e) {
+        var zone = e.target.closest('[fm-drop-zone]');
+        if (zone && !zone.contains(e.relatedTarget)) safeApply(function () { $scope.c.dragOver = false; });
+        var card = dropFolderOf(e);
+        if (card && !card.contains(e.relatedTarget)) card.classList.remove('fm-drag-over');
+    });
+    rootEl.addEventListener('drop', function (e) {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        var zone = e.target.closest('[fm-drop-zone]'), card = dropFolderOf(e);
+        var files = e.dataTransfer && e.dataTransfer.files;
+        if (card) {
+            prevent(e);
+            card.classList.remove('fm-drag-over');
+            var folderId = card.getAttribute('fm-drop-folder');
+            if (files && files.length) safeApply(function () { $scope.c.uploadToFolder(files, folderId); });
+        } else if (zone) {
+            prevent(e);
+            safeApply(function () { $scope.c.dragOver = false; });
+            if (files && files.length && $scope.c.currentFolder && $scope.c.currentFolderCanEdit()) {
+                safeApply(function () { $scope.c.onDirectFilesSelected(files); });
+            }
+        }
+    });
+
+    /* Keyboard */
+    function onDocKey(e) { if ($scope.c) safeApply(function () { $scope.c.onKeyDown(e); }); }
+    document.addEventListener('keydown', onDocKey);
+
+    function closeMenuOnScroll() {
+        if ($scope.c && $scope.c.contextMenu && $scope.c.contextMenu.show) safeApply(function () { $scope.c.closeContextMenu(); });
+    }
+    window.addEventListener('scroll', closeMenuOnScroll, true);
+    window.addEventListener('resize', closeMenuOnScroll);
+
+    $scope.$on('$destroy', function () {
+        document.removeEventListener('keydown', onDocKey);
+        window.removeEventListener('scroll', closeMenuOnScroll, true);
+        window.removeEventListener('resize', closeMenuOnScroll);
+    });
+};]]></link>
         <name>Public_files</name>
         <option_schema/>
         <public>false</public>
@@ -3115,13 +3109,23 @@ tr:hover .fm-file-icon-box,
     /*
      * PUBLIC FILES widget (public_files) - Server Script
      * Only handles PUBLIC files/folders. Private data is never loaded here.
+     *
+     * Every public file / folder that is created, edited, renamed, deleted, restored
+     * or permanently deleted here is mirrored in x_1830514_fm_public_items.
      */
     var FILE_TABLE = 'x_1830514_fm_file';
     var FOLDER_TABLE = 'x_1830514_fm_folder';
     var PUBLIC_ITEMS_TABLE = 'x_1830514_fm_public_items';
     var PUBLIC_ROLE = 'x_1830514_fm.Public';
 
-    var userId = gs.getUserID();
+    /* State declared up-front (previously declared below the main try block) */
+    var _publicFileIds = {};
+    var _publicFolderIds = {};
+    var _publicCacheLoaded = false;
+    var _choiceCache = {};
+    var _lastPublishError = '';
+
+    var userId = String(gs.getUserID());
 
     /* ---- Can this user create/edit public content? ---- */
     var hasPublicRole = false;
@@ -3158,11 +3162,11 @@ tr:hover .fm-file-icon-box,
     data.has_public_role = !!hasPublicRole;
 
     /* ---- Response ---- */
-    data.files = [];   // all public files
-    data.folders = [];   // all public folders
-    data.myFolders = [];   // my PRIVATE folders (target for "Make a copy")
+    data.files = [];          // all public files
+    data.folders = [];        // all public folders
+    data.myFolders = [];      // my PRIVATE folders (target for "Make a copy")
     data.recycleFiles = [];   // my deleted public files
-    data.recycleFolders = [];   // my deleted public folders
+    data.recycleFolders = []; // my deleted public folders
     data.g_ck = gs.getSession().getSessionToken();
     data.error = '';
     data.success = '';
@@ -3201,6 +3205,7 @@ tr:hover .fm-file-icon-box,
             case 'delete_folder_permanent': deleteFolderPermanent(); break;
             case 'create_file': createFile(); break;
             case 'sync_public_attachment': syncPublicAttachment(); break;
+            case 'sync_public_items': syncPublicItems(); break;
             case 'discard_file': discardFile(); break;
             case 'update_file': updateFile(); break;
             case 'rename_file': renameFile(); break;
@@ -3216,18 +3221,46 @@ tr:hover .fm-file-icon-box,
     /* ==================================================
        HELPERS
     ================================================== */
+    function S(v) { return (v === null || v === undefined) ? '' : String(v); }
+    function _isTrue(v) { v = S(v); return v === '1' || v === 'true'; }
+
     function getRecord(table, sysId) {
+        sysId = S(sysId);
         if (!sysId) return null;
         try { var g = new GlideRecord(table); if (g.get(sysId)) return g; } catch (e) { }
         return null;
     }
-    function isDeleted(g) { var v = String(g.getValue('is_deleted')); return v === '1' || v === 'true'; }
+    function isDeleted(g) { return _isTrue(g.getValue('is_deleted')); }
     function _setIf(g, f, v) { if (g.isValidField(f)) g.setValue(f, v); }
+    function _lastErr(g) { try { return S(g.getLastErrorMessage()); } catch (e) { return ''; } }
+
+    /** Resolve the real stored choice value (File / file / FILE ...) for a choice field */
+    function choiceValue(table, field, wanted) {
+        var key = table + '.' + field + '.' + wanted;
+        if (_choiceCache[key] !== undefined) return _choiceCache[key];
+        var out = wanted;
+        try {
+            var ch = new GlideRecord('sys_choice');
+            ch.addQuery('name', table);
+            ch.addQuery('element', field);
+            ch.addQuery('inactive', false);
+            ch.query();
+            while (ch.next()) {
+                var v = S(ch.getValue('value')), l = S(ch.getValue('label'));
+                if (v.toLowerCase() === wanted.toLowerCase() || l.toLowerCase() === wanted.toLowerCase()) { out = v; break; }
+            }
+        } catch (e) { }
+        _choiceCache[key] = out;
+        return out;
+    }
 
     /* ---- Nickname helpers (uses the "nickname" column if it exists, otherwise a [nick:...] marker in description) ---- */
     function cleanNick(s) { return String(s || '').replace(/[\[\]]/g, '').trim().substring(0, 50); }
     function cleanDescText(d) {
         return String(d || '').replace(/\[nick:[^\]]*\]\s*/ig, '').replace(/\[public\]\s*/ig, '').trim();
+    }
+    function cleanFolderDesc(d) {
+        return String(d || '').replace(/\[color:[a-z0-9#-]+\]\s*/ig, '').replace(/\[public\]\s*/ig, '').trim();
     }
     function readNick(gr) {
         if (gr.isValidField('nickname')) return gr.getValue('nickname') || '';
@@ -3241,10 +3274,9 @@ tr:hover .fm-file-icon-box,
         gr.setValue('description', (d ? d + ' ' : '') + (nick ? '[nick:' + nick + ']' : ''));
     }
 
-    var _publicFileIds = {};
-    var _publicFolderIds = {};
-    var _publicCacheLoaded = false;
-
+    /* ==================================================
+       PUBLIC ITEMS TABLE (x_1830514_fm_public_items)
+    ================================================== */
     function initPublicItemsCache(force) {
         if (_publicCacheLoaded && !force) return;
         _publicFileIds = {};
@@ -3254,12 +3286,11 @@ tr:hover .fm-file-icon-box,
             pi.addQuery('active', true);
             pi.query();
             while (pi.next()) {
-                var fId = String(pi.getValue('file') || '');
-                var foldId = String(pi.getValue('folder') || '');
-                var st = String(pi.getValue('source_type') || '').toLowerCase();
-                var pSysId = pi.getUniqueValue();
+                var fId = S(pi.getValue('file'));
+                var foldId = S(pi.getValue('folder'));
+                var pSysId = S(pi.getUniqueValue());
                 if (fId) _publicFileIds[fId] = pSysId;
-                if (foldId && (st === 'folder' || !fId)) _publicFolderIds[foldId] = pSysId;
+                else if (foldId) _publicFolderIds[foldId] = pSysId;
             }
             _publicCacheLoaded = true;
         } catch (e) {
@@ -3267,10 +3298,25 @@ tr:hover .fm-file-icon-box,
         }
     }
 
+    /** Is there ANY public item (active or not) for this file/folder? Used for recycle-bin records. */
+    function hasAnyPublicItem(g) {
+        if (!g) return false;
+        try {
+            var id = S(g.getUniqueValue());
+            var isFile = S(g.getTableName()) === FILE_TABLE;
+            var pi = new GlideRecord(PUBLIC_ITEMS_TABLE);
+            if (isFile) pi.addQuery('file', id);
+            else { pi.addQuery('folder', id); pi.addNullQuery('file'); }
+            pi.setLimit(1);
+            pi.query();
+            return pi.hasNext();
+        } catch (e) { return false; }
+    }
+
     function isRecordPublic(g) {
         if (!g) return false;
         initPublicItemsCache();
-        var id = g.getUniqueValue();
+        var id = S(g.getUniqueValue());
         if (_publicFileIds[id] || _publicFolderIds[id]) return true;
 
         if (g.isValidField('is_public')) {
@@ -3282,28 +3328,30 @@ tr:hover .fm-file-icon-box,
         return desc.indexOf('[public]') !== -1;
     }
 
+    /** Public now, OR was public before it was moved to the recycle bin */
+    function isPublicOrWas(g) { return isRecordPublic(g) || hasAnyPublicItem(g); }
+
     function copyAttachmentToPublicItem(fileSysId, publicItemSysId) {
+        fileSysId = S(fileSysId);
         if (!fileSysId) return;
         try {
-            if (!publicItemSysId || typeof publicItemSysId !== 'string') {
-                publicItemSysId = _publicFileIds[fileSysId];
-            }
-            if (!publicItemSysId || typeof publicItemSysId !== 'string') {
+            publicItemSysId = S(publicItemSysId) || S(_publicFileIds[fileSysId]);
+            if (!publicItemSysId) {
                 var pi = new GlideRecord(PUBLIC_ITEMS_TABLE);
                 pi.addQuery('file', fileSysId);
                 pi.query();
-                if (pi.next()) publicItemSysId = pi.getUniqueValue();
+                if (pi.next()) publicItemSysId = S(pi.getUniqueValue());
             }
             if (!publicItemSysId) return;
 
-            // Check if source file has an attachment
+            // Source file must have an attachment
             var srcAtt = new GlideRecord('sys_attachment');
             srcAtt.addQuery('table_name', FILE_TABLE);
             srcAtt.addQuery('table_sys_id', fileSysId);
             srcAtt.query();
             if (!srcAtt.hasNext()) return;
 
-            // Check if target public item already has an attachment
+            // Skip if the public item already has an attachment
             var tgtAtt = new GlideRecord('sys_attachment');
             tgtAtt.addQuery('table_name', PUBLIC_ITEMS_TABLE);
             tgtAtt.addQuery('table_sys_id', publicItemSysId);
@@ -3325,192 +3373,195 @@ tr:hover .fm-file-icon-box,
         data.success = 'Attachment synced to public item.';
     }
 
-    function publishFileRecord(fileId, title, folderId, nickname) {
-        if (!fileId) return null;
+    /** Create or update the Public Items record for a file. Returns its sys_id or '' on failure. */
+    function publishFileRecord(fileId, title, folderId, nickname, description) {
+        fileId = S(fileId);
+        if (!fileId) return '';
+        _lastPublishError = '';
         try {
             var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
             gr.addQuery('file', fileId);
+            gr.orderBy('sys_created_on');
             gr.query();
-            var desc = nickname ? ('[nick:' + nickname + '] ' + title) : title;
-            var nowGdt = (typeof gs !== 'undefined' && gs.nowDateTime) ? gs.nowDateTime() : (new GlideDateTime()).getValue();
-            var pubUser = String(userId || (typeof gs !== 'undefined' ? gs.getUserID() : ''));
-            var pubId = null;
-            if (gr.next()) {
-                _setIf(gr, 'public_title', title);
-                _setIf(gr, 'source_type', 'File');
-                _setIf(gr, 'active', true);
-                if (folderId) _setIf(gr, 'folder', folderId);
-                _setIf(gr, 'description', desc);
-                _setIf(gr, 'published_by', pubUser);
-                _setIf(gr, 'published_on', nowGdt);
-                gr.update();
-                pubId = gr.getUniqueValue();
-            } else {
-                gr.initialize();
-                _setIf(gr, 'public_title', title);
-                _setIf(gr, 'source_type', 'File');
-                _setIf(gr, 'active', true);
-                _setIf(gr, 'file', fileId);
-                if (folderId) _setIf(gr, 'folder', folderId);
-                _setIf(gr, 'description', desc);
-                _setIf(gr, 'published_by', pubUser);
-                _setIf(gr, 'published_on', nowGdt);
-                pubId = gr.insert();
+            var exists = gr.next();
+            var wasActive = true;
+            if (exists) wasActive = _isTrue(gr.getValue('active'));
+            else { gr.initialize(); _setIf(gr, 'file', fileId); }
+
+            var nick = cleanNick(nickname);
+            var base = cleanDescText(description) || title;
+            var desc = nick ? ('[nick:' + nick + '] ' + base) : base;
+
+            _setIf(gr, 'public_title', title);
+            _setIf(gr, 'source_type', choiceValue(PUBLIC_ITEMS_TABLE, 'source_type', 'File'));
+            _setIf(gr, 'active', true);
+            _setIf(gr, 'folder', S(folderId));
+            _setIf(gr, 'description', desc);
+            if (!exists || !wasActive) {
+                _setIf(gr, 'published_by', userId);
+                _setIf(gr, 'published_on', new GlideDateTime());
             }
-            if (pubId) {
-                _publicFileIds[fileId] = pubId;
-                copyAttachmentToPublicItem(fileId, pubId);
+
+            var pubId = '';
+            if (exists) { var up = gr.update(); pubId = up ? S(up) : ''; }
+            else pubId = S(gr.insert());
+
+            if (!pubId) {
+                _lastPublishError = _lastErr(gr) || 'Insert/update on ' + PUBLIC_ITEMS_TABLE + ' was rejected (check ACLs / business rules / mandatory fields).';
+                gs.error('PublicFiles publishFileRecord failed for file ' + fileId + ': ' + _lastPublishError);
+                return '';
             }
+            _publicFileIds[fileId] = pubId;
+            copyAttachmentToPublicItem(fileId, pubId);
             return pubId;
         } catch (e) {
+            _lastPublishError = e.message;
             gs.error('PublicFiles publishFileRecord error: ' + e.message);
-            return null;
+            return '';
         }
     }
 
+    /** Create or update the Public Items record for a folder. Returns its sys_id or '' on failure. */
     function publishFolderRecord(folderId, title, description) {
-        if (!folderId) return null;
+        folderId = S(folderId);
+        if (!folderId) return '';
+        _lastPublishError = '';
         try {
             var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
             gr.addQuery('folder', folderId);
-            gr.addQuery('source_type', 'Folder');
+            gr.addNullQuery('file');
+            gr.orderBy('sys_created_on');
             gr.query();
-            var nowGdt = (typeof gs !== 'undefined' && gs.nowDateTime) ? gs.nowDateTime() : (new GlideDateTime()).getValue();
-            var pubUser = String(userId || (typeof gs !== 'undefined' ? gs.getUserID() : ''));
-            var pubId = null;
-            if (gr.next()) {
-                _setIf(gr, 'public_title', title);
-                _setIf(gr, 'source_type', 'Folder');
-                _setIf(gr, 'active', true);
-                if (description) _setIf(gr, 'description', description);
-                _setIf(gr, 'published_by', pubUser);
-                _setIf(gr, 'published_on', nowGdt);
-                gr.update();
-                pubId = gr.getUniqueValue();
-            } else {
-                gr.initialize();
-                _setIf(gr, 'public_title', title);
-                _setIf(gr, 'source_type', 'Folder');
-                _setIf(gr, 'active', true);
-                _setIf(gr, 'folder', folderId);
-                if (description) _setIf(gr, 'description', description);
-                _setIf(gr, 'published_by', pubUser);
-                _setIf(gr, 'published_on', nowGdt);
-                pubId = gr.insert();
+            var exists = gr.next();
+            var wasActive = true;
+            if (exists) wasActive = _isTrue(gr.getValue('active'));
+            else { gr.initialize(); _setIf(gr, 'folder', folderId); }
+
+            _setIf(gr, 'public_title', title);
+            _setIf(gr, 'source_type', choiceValue(PUBLIC_ITEMS_TABLE, 'source_type', 'Folder'));
+            _setIf(gr, 'active', true);
+            var d = cleanFolderDesc(description);
+            if (d) _setIf(gr, 'description', d);
+            if (!exists || !wasActive) {
+                _setIf(gr, 'published_by', userId);
+                _setIf(gr, 'published_on', new GlideDateTime());
             }
-            if (pubId) {
-                _publicFolderIds[folderId] = pubId;
+
+            var pubId = '';
+            if (exists) { var up = gr.update(); pubId = up ? S(up) : ''; }
+            else pubId = S(gr.insert());
+
+            if (!pubId) {
+                _lastPublishError = _lastErr(gr) || 'Insert/update on ' + PUBLIC_ITEMS_TABLE + ' was rejected (check ACLs / business rules / mandatory fields).';
+                gs.error('PublicFiles publishFolderRecord failed for folder ' + folderId + ': ' + _lastPublishError);
+                return '';
             }
+            _publicFolderIds[folderId] = pubId;
             return pubId;
         } catch (e) {
+            _lastPublishError = e.message;
             gs.error('PublicFiles publishFolderRecord error: ' + e.message);
-            return null;
+            return '';
         }
     }
 
-    function unpublishFile(fileId) {
-        if (!fileId) return;
-        delete _publicFileIds[fileId];
-        try {
-            var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
-            gr.addQuery('file', fileId);
-            gr.query();
-            while (gr.next()) {
-                if (gr.isValidField('active')) {
-                    gr.setValue('active', false);
-                    gr.update();
-                } else {
-                    gr.deleteRecord();
-                }
-            }
-        } catch (e) { }
+    function _itemQuery(targetType, targetId) {
+        var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
+        if (targetType === 'file') gr.addQuery('file', targetId);
+        else { gr.addQuery('folder', targetId); gr.addNullQuery('file'); }
+        gr.query();
+        return gr;
     }
 
-    function unpublishFolder(folderId) {
-        if (!folderId) return;
-        delete _publicFolderIds[folderId];
+    function unpublishItem(targetType, targetId) {
+        targetId = S(targetId);
+        if (!targetId) return;
+        if (targetType === 'file') delete _publicFileIds[targetId]; else delete _publicFolderIds[targetId];
         try {
-            var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
-            gr.addQuery('folder', folderId);
-            gr.addQuery('source_type', 'Folder');
-            gr.query();
+            var gr = _itemQuery(targetType, targetId);
             while (gr.next()) {
-                if (gr.isValidField('active')) {
-                    gr.setValue('active', false);
-                    gr.update();
-                } else {
-                    gr.deleteRecord();
-                }
+                if (gr.isValidField('active')) { gr.setValue('active', false); gr.update(); }
+                else gr.deleteRecord();
             }
-        } catch (e) { }
+        } catch (e) { gs.error('PublicFiles unpublishItem error: ' + e.message); }
     }
-
-    function restorePublicFileItem(fileId) {
-        if (!fileId) return;
-        _publicFileIds[fileId] = true;
-        try {
-            var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
-            gr.addQuery('file', fileId);
-            gr.query();
-            while (gr.next()) {
-                if (gr.isValidField('active')) {
-                    gr.setValue('active', true);
-                    gr.update();
-                }
-            }
-        } catch (e) { }
-    }
-
-    function restorePublicFolderItem(folderId) {
-        if (!folderId) return;
-        _publicFolderIds[folderId] = true;
-        try {
-            var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
-            gr.addQuery('folder', folderId);
-            gr.addQuery('source_type', 'Folder');
-            gr.query();
-            while (gr.next()) {
-                if (gr.isValidField('active')) {
-                    gr.setValue('active', true);
-                    gr.update();
-                }
-            }
-        } catch (e) { }
-    }
+    function unpublishFile(fileId) { unpublishItem('file', fileId); }
+    function unpublishFolder(folderId) { unpublishItem('folder', folderId); }
 
     function renamePublicItem(targetType, targetId, newTitle) {
+        targetId = S(targetId);
         if (!targetId || !newTitle) return;
         try {
-            var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
-            if (targetType === 'file') gr.addQuery('file', targetId);
-            else {
-                gr.addQuery('folder', targetId);
-                gr.addQuery('source_type', 'Folder');
-            }
-            gr.query();
+            var gr = _itemQuery(targetType, targetId);
             while (gr.next()) {
                 if (gr.isValidField('public_title')) {
                     gr.setValue('public_title', newTitle);
                     gr.update();
                 }
             }
-        } catch (e) { }
+        } catch (e) { gs.error('PublicFiles renamePublicItem error: ' + e.message); }
     }
 
     function deletePublicItemPermanently(targetType, targetId) {
+        targetId = S(targetId);
         if (!targetId) return;
-        if (targetType === 'file') delete _publicFileIds[targetId];
-        else delete _publicFolderIds[targetId];
+        if (targetType === 'file') delete _publicFileIds[targetId]; else delete _publicFolderIds[targetId];
         try {
-            var gr = new GlideRecord(PUBLIC_ITEMS_TABLE);
-            if (targetType === 'file') gr.addQuery('file', targetId);
-            else {
-                gr.addQuery('folder', targetId);
-                gr.addQuery('source_type', 'Folder');
-            }
-            gr.query();
+            var gr = _itemQuery(targetType, targetId);
             while (gr.next()) gr.deleteRecord();
-        } catch (e) { }
+        } catch (e) { gs.error('PublicFiles deletePublicItemPermanently error: ' + e.message); }
+    }
+
+    /** Keeps every Public Items record exactly in line with the files/folders (create missing, fix titles, remove orphans/duplicates) */
+    function syncPublicItems() {
+        if (needRole()) return;
+        var nFiles = 0, nFolders = 0, nClean = 0, nFailed = 0;
+        initPublicItemsCache(true);
+
+        var folders = new GlideRecord(FOLDER_TABLE);
+        folders.addQuery('is_deleted', false);
+        folders.query();
+        while (folders.next()) {
+            if (!isRecordPublic(folders)) continue;
+            var fname = folders.getValue('folder_name') || folders.getValue('name') || '';
+            if (publishFolderRecord(folders.getUniqueValue(), fname, folders.getValue('description'))) nFolders++; else nFailed++;
+        }
+
+        var files = new GlideRecord(FILE_TABLE);
+        files.addQuery('is_deleted', false);
+        files.query();
+        while (files.next()) {
+            if (!isRecordPublic(files)) continue;
+            var fn = files.getValue('filename') || files.getValue('file_name') || files.getValue('name') || '';
+            if (publishFileRecord(files.getUniqueValue(), fn, files.getValue('folder') || '', readNick(files), files.getValue('description'))) nFiles++; else nFailed++;
+        }
+
+        // Remove duplicates and deactivate items whose file/folder is deleted or gone
+        var seenFiles = {}, seenFolders = {};
+        var pi = new GlideRecord(PUBLIC_ITEMS_TABLE);
+        pi.orderBy('sys_created_on');
+        pi.query();
+        while (pi.next()) {
+            var fRef = S(pi.getValue('file')), dRef = S(pi.getValue('folder'));
+            var isFile = !!fRef;
+            if (!isFile && !dRef) continue;
+            var key = isFile ? fRef : dRef;
+            var target = getRecord(isFile ? FILE_TABLE : FOLDER_TABLE, key);
+            if (!target) { pi.deleteRecord(); nClean++; continue; }
+            if (isDeleted(target)) {
+                if (_isTrue(pi.getValue('active')) && pi.isValidField('active')) { pi.setValue('active', false); pi.update(); nClean++; }
+                continue;
+            }
+            var seen = isFile ? seenFiles : seenFolders;
+            if (seen[key]) { pi.deleteRecord(); nClean++; continue; }
+            seen[key] = true;
+        }
+
+        initPublicItemsCache(true);
+        data.success = 'Public Items synced: ' + nFiles + ' file(s), ' + nFolders + ' folder(s)' +
+            (nClean ? ', ' + nClean + ' stale/duplicate record(s) cleaned' : '') +
+            (nFailed ? '. ' + nFailed + ' failed - see System Log (PublicFiles).' : '.');
+        if (nFailed && _lastPublishError) data.error = 'Some items failed: ' + _lastPublishError;
     }
 
     /** Owner / Editor (public-role holders) / Viewer (everybody else). '' = not a public record */
@@ -3589,8 +3640,7 @@ tr:hover .fm-file-icon-box,
 
     function addFolderToList(folder, target, permission) {
         var fn = folder.getValue('folder_name') || folder.getValue('name') || folder.getDisplayValue() || '';
-        var desc = (folder.getValue('description') || '')
-            .replace(/\[color:[a-z0-9#-]+\]\s*/ig, '').replace(/\[public\]\s*/ig, '').trim();
+        var desc = cleanFolderDesc(folder.getValue('description'));
         target.push({
             sys_id: folder.getUniqueValue(),
             folder_name: fn,
@@ -3701,11 +3751,19 @@ tr:hover .fm-file-icon-box,
         _setIf(folder, 'active', true);
         if (parentId) folder.setValue('parent_folder', parentId);
 
-        var id = folder.insert();
+        var id = S(folder.insert());
         if (!id) { data.error = 'Unable to create folder. Please check your permissions.'; return; }
+
         var pubFolderId = publishFolderRecord(id, name, description);
+        if (!pubFolderId) {
+            // keep the data consistent: no folder without a Public Items record
+            var orphan = getRecord(FOLDER_TABLE, id);
+            if (orphan) orphan.deleteRecord();
+            data.error = 'Folder was not created because its Public Items record could not be saved. ' + _lastPublishError;
+            return;
+        }
         data.folder_sys_id = id;
-        data.public_item_sys_id = pubFolderId || '';
+        data.public_item_sys_id = pubFolderId;
         data.success = 'Folder "' + name + '" created successfully.';
     }
 
@@ -3763,7 +3821,7 @@ tr:hover .fm-file-icon-box,
     function restoreFolder() {
         if (needRole()) return;
         var folder = getRecord(FOLDER_TABLE, input.sys_id);
-        if (!folder || !isOwner(folder) || !isDeleted(folder) || !isRecordPublic(folder)) { data.error = 'You cannot restore this folder.'; return; }
+        if (!folder || !isOwner(folder) || !isDeleted(folder) || !isPublicOrWas(folder)) { data.error = 'You cannot restore this folder.'; return; }
         var parentId = folder.getValue('parent_folder');
         if (parentId) {
             var p = getRecord(FOLDER_TABLE, parentId);
@@ -3775,14 +3833,14 @@ tr:hover .fm-file-icon-box,
         folder.setValue('is_deleted', false);
         _setIf(folder, 'deleted_by', ''); _setIf(folder, 'deleted_date', ''); _setIf(folder, 'active', true);
         folder.update();
-        restorePublicFolderItem(folder.getUniqueValue());
+        publishFolderRecord(folder.getUniqueValue(), folder.getValue('folder_name') || folder.getValue('name') || '', folder.getValue('description'));
         data.success = 'Folder restored successfully.';
     }
 
     function deleteFolderPermanent() {
         if (needRole()) return;
         var folder = getRecord(FOLDER_TABLE, input.sys_id);
-        if (!folder || !isOwner(folder) || !isDeleted(folder) || !isRecordPublic(folder)) { data.error = 'You cannot permanently delete this folder.'; return; }
+        if (!folder || !isOwner(folder) || !isDeleted(folder) || !isPublicOrWas(folder)) { data.error = 'You cannot permanently delete this folder.'; return; }
         var id = folder.getUniqueValue();
 
         var sub = new GlideRecord(FOLDER_TABLE);
@@ -3800,6 +3858,31 @@ tr:hover .fm-file-icon-box,
     /* ==================================================
        FILES
     ================================================== */
+    function _fillNewFile(rec, filename, folderId) {
+        if (rec.isValidField('filename')) rec.setValue('filename', filename);
+        if (rec.isValidField('file_name')) rec.setValue('file_name', filename);
+        if (rec.isValidField('name')) rec.setValue('name', filename);
+        if (rec.isValidField('file')) rec.setValue('file', filename);
+        if (rec.isValidField('short_description')) rec.setValue('short_description', filename);
+
+        if (folderId) {
+            if (rec.isValidField('folder')) rec.setValue('folder', folderId);
+            if (rec.isValidField('parent_folder')) rec.setValue('parent_folder', folderId);
+            if (rec.isValidField('parent')) rec.setValue('parent', folderId);
+        }
+
+        _setIf(rec, 'owner', userId);
+        _setIf(rec, 'file_extension', (input.extension || '').toLowerCase());
+        _setIf(rec, 'file_size', parseInt(input.file_size, 10) || 0);
+        _setIf(rec, 'content_type', input.content_type || 'application/octet-stream');
+        _setIf(rec, 'is_deleted', false);
+        _setIf(rec, 'description', '[public]');
+        _setIf(rec, 'current_version', 1);
+        _setIf(rec, 'is_public', true);
+        _setIf(rec, 'access', 'public');
+        writeNick(rec, input.nickname);
+    }
+
     function createFile() {
         if (needRole()) return;
         var filename = (input.filename || '').trim();
@@ -3814,38 +3897,17 @@ tr:hover .fm-file-icon-box,
 
         var file = new GlideRecord(FILE_TABLE);
         file.initialize();
-        if (file.isValidField('filename')) file.setValue('filename', filename);
-        if (file.isValidField('file_name')) file.setValue('file_name', filename);
-        if (file.isValidField('name')) file.setValue('name', filename);
-        if (file.isValidField('file')) file.setValue('file', filename);
-        if (file.isValidField('short_description')) file.setValue('short_description', filename);
+        _fillNewFile(file, filename, folderId);
+        var id = S(file.insert());
 
-        if (folderId) {
-            if (file.isValidField('folder')) file.setValue('folder', folderId);
-            if (file.isValidField('parent_folder')) file.setValue('parent_folder', folderId);
-            if (file.isValidField('parent')) file.setValue('parent', folderId);
-        }
-
-        _setIf(file, 'owner', userId);
-        _setIf(file, 'file_extension', (input.extension || '').toLowerCase());
-        _setIf(file, 'file_size', parseInt(input.file_size, 10) || 0);
-        _setIf(file, 'content_type', input.content_type || 'application/octet-stream');
-        _setIf(file, 'is_deleted', false);
-        _setIf(file, 'description', '[public]');
-        _setIf(file, 'current_version', 1);
-        _setIf(file, 'is_public', true);
-        _setIf(file, 'access', 'public');
-        writeNick(file, input.nickname);
-
-        var id = file.insert();
         if (!id && !folderId) {
-            // If insert failed at root, destination folder may be a mandatory dictionary reference
+            // If insert failed at root, the folder may be a mandatory reference - use / create a public folder
             var pubFolder = new GlideRecord(FOLDER_TABLE);
             pubFolder.addQuery('is_deleted', false);
             pubFolder.query();
             while (pubFolder.next()) {
                 if (isRecordPublic(pubFolder)) {
-                    folderId = pubFolder.getUniqueValue();
+                    folderId = S(pubFolder.getUniqueValue());
                     break;
                 }
             }
@@ -3859,38 +3921,29 @@ tr:hover .fm-file-icon-box,
                 _setIf(pubFolder, 'access', 'public');
                 _setIf(pubFolder, 'description', '[public]');
                 _setIf(pubFolder, 'color', 'blue');
-                folderId = pubFolder.insert();
-                if (folderId) publishFolderRecord(folderId, 'General', '[public]');
+                folderId = S(pubFolder.insert());
+                if (folderId) publishFolderRecord(folderId, 'General', '');
             }
             if (folderId) {
                 var retry = new GlideRecord(FILE_TABLE);
                 retry.initialize();
-                if (retry.isValidField('filename')) retry.setValue('filename', filename);
-                if (retry.isValidField('file_name')) retry.setValue('file_name', filename);
-                if (retry.isValidField('name')) retry.setValue('name', filename);
-                if (retry.isValidField('file')) retry.setValue('file', filename);
-                if (retry.isValidField('short_description')) retry.setValue('short_description', filename);
-                if (retry.isValidField('folder')) retry.setValue('folder', folderId);
-                if (retry.isValidField('parent_folder')) retry.setValue('parent_folder', folderId);
-                if (retry.isValidField('parent')) retry.setValue('parent', folderId);
-                _setIf(retry, 'owner', userId);
-                _setIf(retry, 'file_extension', (input.extension || '').toLowerCase());
-                _setIf(retry, 'file_size', parseInt(input.file_size, 10) || 0);
-                _setIf(retry, 'content_type', input.content_type || 'application/octet-stream');
-                _setIf(retry, 'is_deleted', false);
-                _setIf(retry, 'description', '[public]');
-                _setIf(retry, 'current_version', 1);
-                _setIf(retry, 'is_public', true);
-                _setIf(retry, 'access', 'public');
-                writeNick(retry, input.nickname);
-                id = retry.insert();
+                _fillNewFile(retry, filename, folderId);
+                id = S(retry.insert());
             }
         }
 
         if (!id) { data.error = 'Unable to create file record. Please check your permissions.'; return; }
-        var pubItemId = publishFileRecord(id, filename, folderId, input.nickname);
+
+        var pubItemId = publishFileRecord(id, filename, folderId, input.nickname, '');
+        if (!pubItemId) {
+            // keep the data consistent: no file without a Public Items record
+            var orphan = getRecord(FILE_TABLE, id);
+            if (orphan) orphan.deleteRecord();
+            data.error = 'The Public Items record could not be saved, so the file was not created. ' + _lastPublishError;
+            return;
+        }
         data.file_sys_id = id;
-        data.public_item_sys_id = pubItemId || '';
+        data.public_item_sys_id = pubItemId;
         data.g_ck = gs.getSession().getSessionToken();
         data.success = 'File record created.';
     }
@@ -3909,10 +3962,11 @@ tr:hover .fm-file-icon-box,
         if (!file || !canEdit(permOf(file))) { data.error = 'You do not have permission to edit this file.'; return; }
         var keepNick = readNick(file);
         var desc = cleanDescText(input.description).substring(0, 900);
+        var nick = input.nickname !== undefined ? input.nickname : keepNick;
         file.setValue('description', (desc ? desc + ' ' : '') + '[public]');
-        writeNick(file, input.nickname !== undefined ? input.nickname : keepNick);
+        writeNick(file, nick);
         if (!file.update()) { data.error = 'Unable to update file.'; return; }
-        publishFileRecord(file.getUniqueValue(), file.getValue('filename') || file.getValue('name'), file.getValue('folder') || '', input.nickname !== undefined ? input.nickname : keepNick);
+        publishFileRecord(file.getUniqueValue(), file.getValue('filename') || file.getValue('file_name') || file.getValue('name'), file.getValue('folder') || '', nick, desc);
         data.success = 'File updated successfully.';
     }
 
@@ -3937,7 +3991,21 @@ tr:hover .fm-file-icon-box,
             var att = attId ? getRecord('sys_attachment', attId) : null;
             if (att) { att.setValue('file_name', newName); att.update(); }
         } catch (e) { gs.warn('PublicFiles rename: attachment name not updated: ' + e.message); }
+
         renamePublicItem('file', file.getUniqueValue(), newName);
+
+        // keep the copy attached to the Public Items record in step with the new name
+        try {
+            var pubId = S(_publicFileIds[S(file.getUniqueValue())]);
+            if (pubId) {
+                var pa = new GlideRecord('sys_attachment');
+                pa.addQuery('table_name', PUBLIC_ITEMS_TABLE);
+                pa.addQuery('table_sys_id', pubId);
+                pa.query();
+                while (pa.next()) { pa.setValue('file_name', newName); pa.update(); }
+            }
+        } catch (e2) { gs.warn('PublicFiles rename: public item attachment name not updated: ' + e2.message); }
+
         data.success = 'File renamed to "' + newName + '".';
     }
 
@@ -3957,7 +4025,7 @@ tr:hover .fm-file-icon-box,
     function restoreFile() {
         if (needRole()) return;
         var file = getRecord(FILE_TABLE, input.sys_id);
-        if (!file || !isOwner(file) || !isDeleted(file) || !isRecordPublic(file)) { data.error = 'You cannot restore this file.'; return; }
+        if (!file || !isOwner(file) || !isDeleted(file) || !isPublicOrWas(file)) { data.error = 'You cannot restore this file.'; return; }
         var orig = file.isValidField('original_folder') ? file.getValue('original_folder') : '';
         if (orig) {
             var f = getRecord(FOLDER_TABLE, orig);
@@ -3967,14 +4035,14 @@ tr:hover .fm-file-icon-box,
         file.setValue('is_deleted', false);
         _setIf(file, 'deleted_by', ''); _setIf(file, 'deleted_date', ''); _setIf(file, 'original_folder', '');
         file.update();
-        restorePublicFileItem(file.getUniqueValue());
+        publishFileRecord(file.getUniqueValue(), file.getValue('filename') || file.getValue('file_name') || file.getValue('name') || '', file.getValue('folder') || '', readNick(file), file.getValue('description'));
         data.success = 'File restored successfully.';
     }
 
     function deleteFilePermanent() {
         if (needRole()) return;
         var file = getRecord(FILE_TABLE, input.sys_id);
-        if (!file || !isOwner(file) || !isDeleted(file) || !isRecordPublic(file)) { data.error = 'You cannot permanently delete this file.'; return; }
+        if (!file || !isOwner(file) || !isDeleted(file) || !isPublicOrWas(file)) { data.error = 'You cannot permanently delete this file.'; return; }
         deletePublicItemPermanently('file', file.getUniqueValue());
         _deleteAttachments(file.getUniqueValue());
         file.deleteRecord();
@@ -3986,7 +4054,7 @@ tr:hover .fm-file-icon-box,
         var files = new GlideRecord(FILE_TABLE);
         files.addQuery('owner', userId); files.addQuery('is_deleted', true); files.query();
         while (files.next()) {
-            if (!isRecordPublic(files)) continue;
+            if (!isPublicOrWas(files)) continue;
             deletePublicItemPermanently('file', files.getUniqueValue());
             _deleteAttachments(files.getUniqueValue());
             files.deleteRecord();
@@ -3994,7 +4062,7 @@ tr:hover .fm-file-icon-box,
         var folders = new GlideRecord(FOLDER_TABLE);
         folders.addQuery('owner', userId); folders.addQuery('is_deleted', true); folders.query();
         while (folders.next()) {
-            if (isRecordPublic(folders)) {
+            if (isPublicOrWas(folders)) {
                 deletePublicItemPermanently('folder', folders.getUniqueValue());
                 folders.deleteRecord();
             }
@@ -4030,7 +4098,7 @@ tr:hover .fm-file-icon-box,
         _setIf(nf, 'current_version', 1);
         _setIf(nf, 'is_deleted', false);
         writeNick(nf, readNick(src));
-        var newId = nf.insert();
+        var newId = S(nf.insert());
         if (!newId) { data.error = 'Unable to copy the file.'; return; }
 
         if (getAttachmentId(src.getUniqueValue())) {
@@ -4049,6 +4117,7 @@ tr:hover .fm-file-icon-box,
 
     /* ==================================================
        LOAD DATA
+       (also self-heals: any public file/folder missing from Public Items is published)
     ================================================== */
     function loadData() {
         initPublicItemsCache();
@@ -4062,9 +4131,8 @@ tr:hover .fm-file-icon-box,
                 var p = permOf(folders);
                 if (p) {
                     addFolderToList(folders, data.folders, p);
-                    var foldId = folders.getUniqueValue();
-                    var pubFoldId = _publicFolderIds[foldId];
-                    if (!pubFoldId || typeof pubFoldId !== 'string') {
+                    var foldId = S(folders.getUniqueValue());
+                    if (!_publicFolderIds[foldId]) {
                         var foldName = folders.getValue('folder_name') || folders.getValue('name') || '';
                         publishFolderRecord(foldId, foldName, folders.getValue('description') || '');
                     }
@@ -4079,15 +4147,13 @@ tr:hover .fm-file-icon-box,
         while (files.next()) {
             if (isRecordPublic(files)) {
                 addFileToList(files);
-                var fId = files.getUniqueValue();
-                var pubItemId = _publicFileIds[fId];
-                if (!pubItemId || typeof pubItemId !== 'string') {
+                var fId = S(files.getUniqueValue());
+                var pubItemId = S(_publicFileIds[fId]);
+                if (!pubItemId) {
                     var fn = files.getValue('filename') || files.getValue('file_name') || files.getValue('name') || '';
-                    pubItemId = publishFileRecord(fId, fn, files.getValue('folder') || '', readNick(files));
+                    pubItemId = publishFileRecord(fId, fn, files.getValue('folder') || '', readNick(files), files.getValue('description'));
                 }
-                if (pubItemId) {
-                    copyAttachmentToPublicItem(fId, pubItemId);
-                }
+                if (pubItemId) copyAttachmentToPublicItem(fId, pubItemId);
             }
         }
 
@@ -4113,7 +4179,7 @@ tr:hover .fm-file-icon-box,
         folders.orderByDesc('sys_updated_on');
         folders.query();
         while (folders.next()) {
-            if (!isRecordPublic(folders)) continue;
+            if (!isPublicOrWas(folders)) continue;
             data.recycleFolders.push({
                 sys_id: folders.getUniqueValue(),
                 folder_name: folders.getValue('folder_name') || folders.getValue('name') || '',
@@ -4129,7 +4195,7 @@ tr:hover .fm-file-icon-box,
         files.orderByDesc('sys_updated_on');
         files.query();
         while (files.next()) {
-            if (!isRecordPublic(files)) continue;
+            if (!isPublicOrWas(files)) continue;
             data.recycleFiles.push({
                 sys_id: files.getUniqueValue(),
                 filename: files.getValue('filename') || files.getValue('file_name') || files.getValue('name') || '',
@@ -4147,14 +4213,14 @@ tr:hover .fm-file-icon-box,
         <sys_created_by>sumanth</sys_created_by>
         <sys_created_on>2026-11-17 11:16:08</sys_created_on>
         <sys_id>6c3696e6c3a4d750c05a33bc050131c2</sys_id>
-        <sys_mod_count>35</sys_mod_count>
+        <sys_mod_count>38</sys_mod_count>
         <sys_name>Public_files</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sp_widget_6c3696e6c3a4d750c05a33bc050131c2</sys_update_name>
         <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-19 05:44:03</sys_updated_on>
+        <sys_updated_on>2026-11-19 07:15:00</sys_updated_on>
         <template><![CDATA[<div class="fm-app" ng-class="{'fm-picker': c.pickerMode}" ng-click="c.closeContextMenu()">
 
     <!-- ================= SIDEBAR ================= -->
@@ -4282,6 +4348,11 @@ tr:hover .fm-file-icon-box,
                         <button type="button" class="fm-view-btn" ng-class="{'active': c.viewMode == 'list'}"
                             ng-click="c.setViewMode('list')" title="List view"><i class="fa fa-bars"></i></button>
                     </div>
+                    <button type="button" class="fm-button" ng-if="c.canCreate() && !c.pickerMode"
+                        ng-disabled="c.syncing || c.uploading" ng-click="c.syncPublicItems()"
+                        title="Make sure every public file and folder has an up-to-date Public Items record">
+                        <i class="fa" ng-class="c.syncing ? 'fa-spinner fa-spin' : 'fa-exchange'"></i>
+                        {{c.syncing ? 'Syncing...' : 'Sync Public Items'}}</button>
                     <button type="button" class="fm-button fm-primary" ng-if="c.canCreate()"
                         ng-click="c.openUploadFolderPicker()"><i class="fa fa-upload"></i> Upload Files</button>
                 </div>

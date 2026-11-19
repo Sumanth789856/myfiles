@@ -39,7 +39,7 @@
     }
 
     // Pass the full scoped UI Page name (without .do)
-    var dialog = new GlideModal('fm_attachment_dialog', false, 700);
+    var dialog = new GlideModal('x_1830514_fm_fm_attachment_dialog', false, 700);
     dialog.setTitle(getMessage('Attachments'));
     dialog.setPreference('target_table', g_form.getTableName());
     dialog.setPreference('target_sys_id', g_form.getUniqueValue());
@@ -73,7 +73,7 @@
         <sys_domain>global</sys_domain>
         <sys_domain_path>/</sys_domain_path>
         <sys_id>7dafa62cc3a05710c05a33bc0501315f</sys_id>
-        <sys_mod_count>52</sys_mod_count>
+        <sys_mod_count>55</sys_mod_count>
         <sys_name>Attach File </sys_name>
         <sys_overrides/>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
@@ -81,7 +81,7 @@
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_ui_action_7dafa62cc3a05710c05a33bc0501315f</sys_update_name>
         <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-12 12:12:26</sys_updated_on>
+        <sys_updated_on>2026-11-19 14:15:58</sys_updated_on>
         <table>task</table>
         <ui11_compatible>true</ui11_compatible>
         <ui16_compatible>false</ui16_compatible>

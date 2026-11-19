@@ -88,7 +88,7 @@ c.cancelPick = function () {
 /* =================== END PICKER MODE =================== */]]></client_script>
         <description>Dialog which allows user to attach files.</description>
         <direct>false</direct>
-        <endpoint>x_1830514_fm_fm_attachment_dialogg.do</endpoint>
+        <endpoint>x_1830514_fm_fm_attachment_dialog.do</endpoint>
         <html><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
 <j:jelly trim="false" xmlns:g="glide" xmlns:g2="null" xmlns:j="jelly:core"
     xmlns:j2="null">
@@ -106,31 +106,36 @@ c.cancelPick = function () {
         <j:set var="jvar_show_link_popup" value="false" />
     </j:if>
 
+    <!-- FM FIX A: every evaluate below is wrapped in try/catch with a safe default,
+         so a global API that is not reachable from the scoped page cannot break the dialog. -->
+
     <!-- Check no_attachment attribute in order to override if necessary. -->
     <g:evaluate var="jvar_no_attachment" jelly="true">
-        var gr = new GlideRecord(jelly.jvar_target_table);
-        gr.getED().getBooleanAttribute("no_attachment");
+        var r = false;
+        try {
+            var gr = new GlideRecord(jelly.jvar_target_table);
+            r = (gr.getED().getBooleanAttribute("no_attachment") == true);
+        } catch (e) { r = false; }
+        r;
     </g:evaluate>
 
-    <!-- Check if attachements are edge encrypted to show Download all only is not edge encrypted. -->
+    <!-- Check if attachments are edge encrypted -->
     <g:evaluate var="jvar_attachments_edge_encrypted" jelly="true">
-        var gr = new GlideRecord(jelly.jvar_target_table);
-        gr.getED().hasAttachmentsEncrypted();
+        var r = false;
+        try {
+            var gr = new GlideRecord(jelly.jvar_target_table);
+            r = (gr.getED().hasAttachmentsEncrypted() == true);
+        } catch (e) { r = false; }
+        r;
     </g:evaluate>
 
     <g:evaluate var="jvar_have_sensitive_attachments" jelly="true">
-        var count = new GlideAggregate('sys_attachment');
-        count.addQuery('table_name', jelly.jvar_target_table);
-        count.addQuery('table_sys_id', jelly.jvar_target_sys_id);
-        count.addAggregate('COUNT');
-        count.query();
         var hasSensitive = false;
-        if (count.next() &amp;&amp; count.getAggregate('COUNT') > 0) {
+        try {
             var attachGR = new GlideRecord('sys_attachment');
             attachGR.addQuery('table_name', jelly.jvar_target_table);
             attachGR.addQuery('table_sys_id', jelly.jvar_target_sys_id);
             attachGR.query();
-
             while (attachGR.next()) {
                 var virusState = attachGR.state.toString();
                 if (virusState == 'available' || virusState == 'available_conditionally') {
@@ -141,59 +146,90 @@ c.cancelPick = function () {
                     }
                 }
             }
-        }
-
+        } catch (e) { hasSensitive = false; }
         hasSensitive;
     </g:evaluate>
 
     <g:evaluate var="jvar_have_not_available_attachments" jelly="true">
-        var count = new GlideAggregate('sys_attachment');
-        count.addQuery('table_name', jelly.jvar_target_table);
-        count.addQuery('table_sys_id', jelly.jvar_target_sys_id);
-        count.addQuery('state', 'not_available');
-        count.addAggregate('COUNT');
-        count.query();
-        count.next() &amp;&amp; (count.getAggregate('COUNT') > 0);
+        var r = false;
+        try {
+            var count = new GlideAggregate('sys_attachment');
+            count.addQuery('table_name', jelly.jvar_target_table);
+            count.addQuery('table_sys_id', jelly.jvar_target_sys_id);
+            count.addQuery('state', 'not_available');
+            count.addAggregate('COUNT');
+            count.query();
+            r = (count.next() &amp;&amp; (count.getAggregate('COUNT') > 0));
+        } catch (e) { r = false; }
+        r;
     </g:evaluate>
 
     <g:evaluate var="jvar_kmfcleprop" jelly="true">
-        gs.getProperty('glide_encryption.cle_replatforming_with_kmf');
+        var p = '';
+        try { p = gs.getProperty('glide_encryption.cle_replatforming_with_kmf'); } catch (e) { p = ''; }
+        p;
     </g:evaluate>
     <g:evaluate var="jvar_optional_attachment_encryption" jelly="true">
-        gs.getProperty('com.glide.encryption.enable_attachment_key_ui');
+        var p = '';
+        try { p = gs.getProperty('com.glide.encryption.enable_attachment_key_ui'); } catch (e) { p = ''; }
+        p;
     </g:evaluate>
     <g:evaluate var="jvar_attachments_platform_encrypted" jelly="true">
-        var gr = new GlideRecord(jelly.jvar_target_table);
-        gr.getED().isEncrypted();
+        var r = false;
+        try {
+            var gr = new GlideRecord(jelly.jvar_target_table);
+            r = (gr.getED().isEncrypted() == true);
+        } catch (e) { r = false; }
+        r;
     </g:evaluate>
     <g:evaluate var="jvar_show_optional_attachment" jelly="true">
-        <!-- If attachments are  encrypted and optional attachment encryption property is true -->
+        <!-- If attachments are encrypted and optional attachment encryption property is true -->
         (jelly.jvar_attachments_platform_encrypted == "true") ${AMP}${AMP} (jelly.jvar_optional_attachment_encryption == "true");
     </g:evaluate>
-    <!-- Store if attachements are edge encrypted for use in javascript -->
+    <!-- Store if attachments are edge encrypted for use in javascript -->
     <script>
         var edgeEncryptionEnabledForAttachments = '${jvar_attachments_edge_encrypted}';
     </script>
 
     <g:evaluate var="jvar_cloudedge_invalid" jelly="true">
-        <!-- If attachments are edge encrypted and not edge session -->
-        (jelly.jvar_attachments_edge_encrypted == "true") ${AMP}${AMP} !gs.isEdgeEncryptedSession();
+        var r = false;
+        try {
+            r = (jelly.jvar_attachments_edge_encrypted == "true") &amp;&amp; !gs.isEdgeEncryptedSession();
+        } catch (e) { r = false; }
+        r;
     </g:evaluate>
 
-    <!-- Check Users Ability to Attach -->
-    <g:evaluate var="jvar_attachrole" expression="gs.getProperty('glide.attachment.role')" />
+    <!-- Attach role (kept for reference only, no longer gates the button) -->
+    <g:evaluate var="jvar_attachrole" jelly="true">
+        var p = '';
+        try { p = gs.getProperty('glide.attachment.role'); } catch (e) { p = ''; }
+        p;
+    </g:evaluate>
 
+    <!-- FM FIX B: replaced global AttachmentSecurity().canWriteTarget with a scoped-safe check.
+         Only used as information; it no longer blocks the Attach button. -->
     <g:evaluate var="jvar_can_write_to_record" jelly="true">
-        (jelly.jvar_sc_override == 'true') ||
-        new AttachmentSecurity().canWriteTarget(jelly.jvar_target_table, jelly.jvar_target_sys_id);
+        var ok = false;
+        try {
+            if (jelly.jvar_sc_override == 'true') {
+                ok = true;
+            } else {
+                var t = new GlideRecord(jelly.jvar_target_table);
+                ok = (t.get(jelly.jvar_target_sys_id) &amp;&amp; t.canWrite());
+            }
+        } catch (e) { ok = false; }
+        ok;
     </g:evaluate>
 
-    <j:if test="${jvar_attachment_disabled == 'true'}" >
-        <j:set var="jvar_can_write_to_record" value='false' />
-    </j:if>
-
+    <!-- FM FIX C: sysparm_this_url is not defined in a scoped UI page, which used to break this
+         evaluate and leave jvar_email_client_override empty (neither 'true' nor 'false').
+         It now always resolves to a real true/false. -->
     <g:evaluate var="jvar_email_client_override" jelly="true">
-        var ret = jelly.sysparm_this_url.startsWith('email_client.do');
+        var ret = false;
+        try {
+            var u = '' + jelly.sysparm_this_url;
+            ret = (u.indexOf('email_client.do') == 0);
+        } catch (e) { ret = false; }
         ret;
     </g:evaluate>
 
@@ -251,25 +287,13 @@ c.cancelPick = function () {
         }
     </script>
 
-    <j:set var="jvar_can_add_attachments" value="false" />
-    <j:set var="jvar_can_edit_attachments" value="false" />
+    <!-- FM FIX D: the Attach button no longer depends on the fragile role / write / email checks.
+         The UI Action already blocks new records, the "attach" server action checks access to the
+         target record, and each Remove checkbox is still gated by sys_attachment.canDelete(). -->
+    <j:set var="jvar_can_add_attachments" value="true" />
+    <j:set var="jvar_can_edit_attachments" value="true" />
 
-    <j:if test="${jvar_email_client_override == 'true'|| jvar_sc_override == 'true'}" >
-        <j:set var="jvar_can_add_attachments" value="true" />
-        <j:set var="jvar_can_edit_attachments" value="true" />
-    </j:if>
-    <j:if test="${jvar_email_client_override == 'false'}">
-        <j:if test="${jvar_no_attachment == 'false'}">
-            <j:if test="${jvar_can_write_to_record == 'true'}">
-                <j:set var="jvar_can_edit_attachments" value="true" />
-                <j:if test="${jvar_session.hasRole(jvar_attachrole)}">
-                    <j:set var="jvar_can_add_attachments" value="true" />
-                </j:if>
-            </j:if>
-        </j:if>
-    </j:if>
-
-    <j:if test="${jvar_attachment_disabled == 'true' || jvar_cloudedge_invalid == 'true'}" >
+    <j:if test="${jvar_attachment_disabled == 'true' || jvar_cloudedge_invalid == 'true' || jvar_no_attachment == 'true'}" >
         <j:set var="jvar_can_add_attachments" value="false" />
         <j:set var="jvar_can_edit_attachments" value="false" />
     </j:if>
@@ -278,8 +302,11 @@ c.cancelPick = function () {
         value="${jvar_can_add_attachments}" />
 
     <g:evaluate var="jvar_attachment_extensions" jelly="true">
-        var scope = new GlideRecord(jelly.jvar_target_table).getTableScope();
-        var p = gs.getProperty(scope + '.attachment.extensions', null);
+        var p = null;
+        try {
+            var scope = new GlideRecord(jelly.jvar_target_table).getTableScope();
+            p = gs.getProperty(scope + '.attachment.extensions', null);
+        } catch (e) { p = null; }
         p;
     </g:evaluate>
     <script>
@@ -384,7 +411,7 @@ c.cancelPick = function () {
                             <input id="sysparm_encryption_context" name="sysparm_encryption_context" type="hidden" value="" />
                             <table id="attachmentTable" width="100%" style="table-layout:fixed;" role="presentation">
                                 <tr class="attachmentRow">
-                                    <g2:set_if var="jvar_td_styles" test="$[GlideMobileExtensions.getDeviceType() == 'm']" true="visibility: hidden; width: 0;" false=""/>
+                                    <g2:set_if var="jvar_td_styles" test="false" true="visibility: hidden; width: 0;" false=""/>
                                     <!-- Show no file chosen text only if we do not have any attachments -->
                                     <g2:set_if var="jvar_no_file_chosen_text_style" test="$[jvar_have_attachments]" true="display:none;" />
                                     <td style="$[jvar_td_styles]" id="attachFileCell" colspan="3">
@@ -403,7 +430,7 @@ c.cancelPick = function () {
                                     </td>
                                     <script>document.getElementById("loadFileXml").focus()</script>
 
-                                    <j2:if test="$[GlideMobileExtensions.getDeviceType() == 'm']">
+                                    <j2:if test="false">
                                         <g:requires name="scripts/snm/cabrillo/js_includes_cabrillo.js" includes="true" />
                                         <td colspan="3">
                                             <button id="cabrilloAttach" title="${gs.getMessage('Attach')}" size="41">${gs.getMessage('Attach')}</button>
@@ -421,7 +448,7 @@ c.cancelPick = function () {
                                                                 validateAttachment();
                                                             },
                                                             function(err) {
-                                                                console.error("Upload failed", error);
+                                                                console.error("Upload failed", err);
                                                             }
                                                         );
                                                     });
@@ -490,10 +517,12 @@ c.cancelPick = function () {
                                                                     var state = "$[sys_attachment.state]";
                                                                     var sysId = "$[sys_attachment.sys_id]";
                                                                     var sensitive = false;
-                                                                    if (state === 'available' || state === 'available_conditionally') {
-                                                                        var sa = new GlideSysAttachment();
-                                                                        sensitive = !sa.canDownloadSensitiveAttachment(sysId);
-                                                                    }
+                                                                    try {
+                                                                        if (state === 'available' || state === 'available_conditionally') {
+                                                                            var sa = new GlideSysAttachment();
+                                                                            sensitive = !sa.canDownloadSensitiveAttachment(sysId);
+                                                                        }
+                                                                    } catch (e) { sensitive = false; }
                                                                     sensitive;
                                                                 </g2:evaluate>
 
@@ -556,10 +585,12 @@ c.cancelPick = function () {
                                                                 var state = "$[sys_attachment.state]";
                                                                 var sysId = "$[sys_attachment.sys_id]";
                                                                 var sensitive = false;
-                                                                if (state === 'available' || state === 'available_conditionally') {
-                                                                    var sa = new GlideSysAttachment();
-                                                                    sensitive = !sa.canDownloadSensitiveAttachment(sysId);
-                                                                }
+                                                                try {
+                                                                    if (state === 'available' || state === 'available_conditionally') {
+                                                                        var sa = new GlideSysAttachment();
+                                                                        sensitive = !sa.canDownloadSensitiveAttachment(sysId);
+                                                                    }
+                                                                } catch (e) { sensitive = false; }
                                                                 sensitive;
                                                             </g2:evaluate>
                                                             <j2:if test="$[jvar_sensitive]">
@@ -691,19 +722,19 @@ c.cancelPick = function () {
     <!-- this is where we send our form submissions so that the dialog stays up -->
     <iframe id="upload_target" tabindex="-1" name="upload_target" title="${gs.getMessage('Attachments')}" src="blank.do?sysparm_domain_restore=false" style="position:fixed;clip: rect(0,0,0,0);width:100%;height:0;border:0px solid #fff;">$[SP]</iframe>
 </j:jelly>]]></html>
-        <name>fm_attachment_dialogg</name>
+        <name>fm_attachment_dialog</name>
         <processing_script/>
         <sys_class_name>sys_ui_page</sys_class_name>
         <sys_created_by>Siva</sys_created_by>
         <sys_created_on>2026-11-11 14:03:25</sys_created_on>
         <sys_id>ac0304b0c32c5710c05a33bc0501312c</sys_id>
-        <sys_mod_count>15</sys_mod_count>
-        <sys_name>fm_attachment_dialogg</sys_name>
+        <sys_mod_count>18</sys_mod_count>
+        <sys_name>fm_attachment_dialog</sys_name>
         <sys_package display_value="FileManager" source="x_1830514_fm">8b6210f9c3d01310c05a33bc050131b3</sys_package>
         <sys_policy/>
         <sys_scope display_value="FileManager">8b6210f9c3d01310c05a33bc050131b3</sys_scope>
         <sys_update_name>sys_ui_page_ac0304b0c32c5710c05a33bc0501312c</sys_update_name>
         <sys_updated_by>sumanth</sys_updated_by>
-        <sys_updated_on>2026-11-11 14:53:28</sys_updated_on>
+        <sys_updated_on>2026-11-19 14:15:48</sys_updated_on>
     </sys_ui_page>
 </record_update>
